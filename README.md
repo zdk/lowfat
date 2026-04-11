@@ -97,27 +97,31 @@ lowfat status             # show status badge
 
 ### Config file
 
-Create a `.lowfat` file in your project root (or any parent directory — lowfat walks up to find it):
+Optional. Create a `.lowfat` file in your project root (or any parent directory — lowfat walks up to find it). All built-in filters and plugins are active by default.
 
 ```sh
-# Intensity level: lite, full (default), ultra
+# Set intensity level (default: full)
 level=ultra
 
-# Disable specific filters
-disable=npm,cargo
-
-# Or whitelist — only these filters are active
-filters=git,docker
-
-# Per-command pipelines (see "Filtering any command" below)
+# Filter any command with a pipeline
 pipeline.deploy = grep:^(Deploy|ERROR|FAIL) | head:10
-pipeline.deploy.error = head:50
-pipeline.deploy.empty = passthrough
-pipeline.deploy.large = grep:ERROR | token-budget:500
-
-# Override built-in filter pipelines
-pipeline.git.diff = grep:^(diff |--- |\+\+\+ |@@ |[+-]) | head:200
 ```
+
+All settings:
+
+```sh
+level=ultra                # lite, full (default), ultra
+disable=npm,cargo          # disable specific filters (default: none)
+filters=git,docker         # whitelist mode — only these active (default: all)
+pipeline.<cmd> = ...       # per-command pipeline
+pipeline.<cmd>.error = ... # when exit code != 0
+pipeline.<cmd>.empty = ... # when output is empty
+pipeline.<cmd>.large = ... # when output > 10KB
+```
+
+`disable` and `filters` are mutually exclusive — use one or the other, not both.
+
+Run `lowfat config` to see the resolved config and validate your `.lowfat` file.
 
 All settings can also be overridden with environment variables:
 
