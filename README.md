@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="docs/lowfat_logo_v2.svg" alt="lowfat" width="500">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="./docs/lowfat_logo_dark.svg">
+    <img src="./docs/lowfat_logo_light.svg" alt="lowfat logo" width="420">
+  </picture>
 </p>
 
 <p align="center">

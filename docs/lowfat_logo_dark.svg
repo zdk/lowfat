@@ -1,0 +1,26 @@
+<svg width="560" height="200" viewBox="0 0 680 300" role="img" xmlns="http://www.w3.org/2000/svg">
+  <title>lowfat logo</title>
+  <desc>Logo for lowfat CLI — slim your output, save tokens</desc>
+
+  <rect width="680" height="300" fill="#0d1117"/>
+
+  <g transform="translate(60, 110)">
+    <rect fill="#374151" x="0"  y="0"  width="52" height="10" rx="2"/>
+    <rect fill="#374151" x="0"  y="16" width="44" height="10" rx="2"/>
+    <rect fill="#374151" x="0"  y="32" width="52" height="10" rx="2"/>
+    <rect fill="#374151" x="0"  y="48" width="38" height="10" rx="2"/>
+    <rect fill="#374151" x="0"  y="64" width="50" height="10" rx="2"/>
+
+    <line x1="56" y1="37" x2="76" y2="37" stroke="#4b5563" stroke-width="1.5" stroke-dasharray="3 2"/>
+    <polygon fill="#4ade80" points="90,24 106,37 90,50 74,37"/>
+    <line x1="108" y1="37" x2="128" y2="37" stroke="#4b5563" stroke-width="1.5" stroke-dasharray="3 2"/>
+
+    <rect fill="#4ade80" x="130" y="28" width="30" height="9" rx="2"/>
+    <rect fill="#4ade80" opacity="0.5" x="130" y="43" width="18" height="9" rx="2"/>
+
+    <text font-family="ui-monospace,'SF Mono',monospace" font-size="11" fill="#4b5563" x="83" y="80" text-anchor="middle">|</text>
+  </g>
+
+  <text font-family="ui-monospace,'SF Mono',monospace" font-size="54" font-weight="400" fill="#f9fafb" x="248" y="168">lowfat</text>
+  <text font-family="ui-monospace,'SF Mono',monospace" font-size="12" fill="#9ca3af" letter-spacing="2" x="248" y="198">slim your output · save tokens</text>
+</svg>
