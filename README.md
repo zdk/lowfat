@@ -94,17 +94,40 @@ lowfat audit              # show recent plugin executions
 lowfat status             # show status badge
 ```
 
-#### Disabling filters
+### Config file
+
+Create a `.lowfat` file in your project root (or any parent directory — lowfat walks up to find it):
 
 ```sh
-LOWFAT_DISABLE=git lowfat git status   # disable git filter for this run
-```
+# Intensity level: lite, full (default), ultra
+level=ultra
 
-Or in `.lowfat` config:
-
-```
+# Disable specific filters
 disable=npm,cargo
+
+# Or whitelist — only these filters are active
+filters=git,docker
+
+# Per-command pipelines (see "Filtering any command" below)
+pipeline.deploy = grep:^(Deploy|ERROR|FAIL) | head:10
+pipeline.deploy.error = head:50
+pipeline.deploy.empty = passthrough
+pipeline.deploy.large = grep:ERROR | token-budget:500
+
+# Override built-in filter pipelines
+pipeline.git.diff = grep:^(diff |--- |\+\+\+ |@@ |[+-]) | head:200
 ```
+
+All settings can also be overridden with environment variables:
+
+| Env var | Effect |
+|---------|--------|
+| `LOWFAT_LEVEL` | Override level (`lite`, `full`, `ultra`) |
+| `LOWFAT_DISABLE` | Comma-separated filters to disable |
+| `LOWFAT_HOME` | Plugin/config home (default: `~/.lowfat`) |
+| `LOWFAT_DATA` | Data directory for history db (default: `~/.local/share/lowfat`) |
+
+Env vars take priority over `.lowfat` file.
 
 ### Token savings
 
@@ -146,31 +169,33 @@ pipeline.lint = grep-v:^✓ | head:30
 pipeline.migrate = grep:^(Migrating|Applied|Error|Already) | head:15
 ```
 
-The command name is what you pass to `lowfat`: `lowfat deploy args...`, `lowfat run-tests --suite integration`, etc.
+The command name matches what you pass to `lowfat`: `lowfat deploy args...`, `lowfat run-tests --suite integration`, etc. Command names must not contain dots (`.` separates command from condition suffix).
 
-Different pipelines for error vs success:
+#### Conditional pipelines
+
+Use `.error`, `.empty`, `.large` suffixes to handle different output states:
 
 ```
 pipeline.deploy = grep:complete|updated | head:5
-pipeline.deploy.error = head:50
-pipeline.deploy.large = grep:ERROR|FAIL | token-budget:500
+pipeline.deploy.error = head:50                          # exit code != 0
+pipeline.deploy.empty = passthrough                      # no output
+pipeline.deploy.large = grep:ERROR|FAIL | token-budget:500  # output > 10KB
 ```
 
-The `.error` and `.large` suffixes are conditions — `.` separates command from condition, so command names must not contain dots (use aliases or wrapper scripts if needed).
+#### Built-in processors
 
-Override built-in filters the same way:
-
-```
-pipeline.git.diff = grep:^(diff |--- |\+\+\+ |@@ |[+-]) | head:200
-pipeline.cargo = grep:^error | head:50
-pipeline.kubectl = strip-ansi | cut:1,4,6 | token-budget:500
-```
-
-Built-in processors: `grep`, `grep-v`, `cut`, `strip-ansi`, `head`, `truncate`, `token-budget`, `dedup-blank`, `normalize`, `redact-secrets`
-
-`normalize` trims trailing whitespace per line, collapses consecutive blank lines, and strips leading/trailing blank lines. It runs automatically as a final step on all pipeline output.
-
-`cut` uses Unix `cut -f` syntax: `cut:1,3` (fields 1 and 3), `cut:2-5` (range), `cut:3-` (field 3 to end), `cut:,;1,3` (comma delimiter).
+| Processor | Syntax | Description |
+|-----------|--------|-------------|
+| `grep` | `grep:pattern` | Keep lines matching regex |
+| `grep-v` | `grep-v:pattern` | Remove lines matching regex |
+| `head` | `head:N` | First N lines |
+| `truncate` | `truncate:N` | First N characters per line |
+| `cut` | `cut:1,3` or `cut:2-5` | Extract fields (`cut:,;1,3` for comma delimiter) |
+| `strip-ansi` | `strip-ansi` | Remove ANSI escape codes |
+| `token-budget` | `token-budget:N` | Trim to ~N tokens |
+| `dedup-blank` | `dedup-blank` | Collapse consecutive blank lines |
+| `normalize` | `normalize` | Trim whitespace, collapse blanks (runs automatically) |
+| `redact-secrets` | `redact-secrets` | Mask API keys, tokens, passwords |
 
 ### Plugins
 
