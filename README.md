@@ -5,7 +5,7 @@
   </picture>
 </p>
 
-lowfat reduces AI token costs automatically by filtering unnecessary CLI output before it reaches your agent.
+lowfat is a lightweight CLI tool that reduces AI token costs by filtering unnecessary CLI output before it reaches your agent.
 
 Wrap commands as shell functions and pipe them through composable processors like `grep`, `cut`, `head`, and `token-budget`.
 
