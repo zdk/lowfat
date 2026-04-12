@@ -17,6 +17,31 @@ pub struct TrackRecord {
     pub project_path: String,
 }
 
+/// A single invocation record for the usage-history table.
+pub struct InvocationRecord {
+    pub command: String,
+    pub subcommand: String,
+    pub raw_tokens: u64,
+    pub filtered_tokens: u64,
+    pub had_plugin: bool,
+    pub exit_code: i32,
+}
+
+/// One row of the plugin-candidates ranking.
+#[derive(Debug)]
+pub struct HistoryRow {
+    pub command: String,
+    pub subcommand: String,
+    pub runs: u64,
+    pub avg_raw_tokens: f64,
+    pub savings_pct: f64,
+    pub plugin_ratio: f64,
+    pub score: f64,
+}
+
+/// Max rows retained in the `invocations` table. Oldest are evicted on insert.
+const INVOCATIONS_CAP: i64 = 10_000;
+
 /// Summary row from gain report.
 #[derive(Debug)]
 pub struct GainSummary {
@@ -79,7 +104,19 @@ impl Db {
                 checksum TEXT DEFAULT '',
                 details TEXT DEFAULT ''
             );
-            CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit(timestamp);",
+            CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit(timestamp);
+
+            CREATE TABLE IF NOT EXISTS invocations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                command TEXT NOT NULL,
+                subcommand TEXT NOT NULL DEFAULT '',
+                raw_tokens INTEGER NOT NULL,
+                filtered_tokens INTEGER NOT NULL,
+                had_plugin INTEGER NOT NULL,
+                exit_code INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_invocations_cmd ON invocations(command, subcommand);",
         )?;
         Ok(Db { conn })
     }
@@ -110,6 +147,64 @@ impl Db {
             ],
         )?;
         Ok(())
+    }
+
+    /// Record an invocation for the usage-history ranking. Evicts oldest rows
+    /// once the table grows past `INVOCATIONS_CAP`.
+    pub fn record_invocation(&self, rec: &InvocationRecord) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO invocations(timestamp, command, subcommand, raw_tokens, filtered_tokens, had_plugin, exit_code)
+             VALUES(datetime('now'), ?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![
+                rec.command,
+                rec.subcommand,
+                rec.raw_tokens as i64,
+                rec.filtered_tokens as i64,
+                rec.had_plugin as i64,
+                rec.exit_code,
+            ],
+        )?;
+        // id is monotonic (AUTOINCREMENT), so this trims only when over the cap.
+        self.conn.execute(
+            "DELETE FROM invocations WHERE id <= (SELECT MAX(id) - ?1 FROM invocations)",
+            [INVOCATIONS_CAP],
+        )?;
+        Ok(())
+    }
+
+    /// Rank command+subcommand pairs as plugin candidates.
+    /// Score = runs × avg_raw_tokens × (1 − savings_ratio) — i.e. called often,
+    /// produces a lot, and lowfat is not yet shrinking it much.
+    pub fn history_ranking(&self, limit: usize) -> Result<Vec<HistoryRow>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT command, subcommand,
+                    COUNT(*) AS runs,
+                    AVG(raw_tokens) AS avg_raw,
+                    CASE WHEN SUM(raw_tokens) > 0
+                         THEN 100.0 * (1.0 - 1.0 * SUM(filtered_tokens) / SUM(raw_tokens))
+                         ELSE 0 END AS savings_pct,
+                    AVG(had_plugin) AS plugin_ratio,
+                    COUNT(*) * AVG(raw_tokens) *
+                        (CASE WHEN SUM(raw_tokens) > 0
+                              THEN 1.0 - 1.0 * SUM(filtered_tokens) / SUM(raw_tokens)
+                              ELSE 0 END) AS score
+             FROM invocations
+             GROUP BY command, subcommand
+             ORDER BY score DESC
+             LIMIT ?1",
+        )?;
+        let rows = stmt.query_map([limit as i64], |row| {
+            Ok(HistoryRow {
+                command: row.get(0)?,
+                subcommand: row.get(1)?,
+                runs: row.get::<_, i64>(2)? as u64,
+                avg_raw_tokens: row.get(3)?,
+                savings_pct: row.get(4)?,
+                plugin_ratio: row.get(5)?,
+                score: row.get(6)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
     /// Lifetime gain summary.
@@ -250,6 +345,57 @@ mod tests {
         assert_eq!(summary.input_tokens, 25);
         assert_eq!(summary.output_tokens, 10);
         assert_eq!(summary.saved_tokens, 15);
+    }
+
+    #[test]
+    fn invocations_evict_past_cap() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(tmp.path()).unwrap();
+
+        // Insert cap + 5 rows, verify eviction keeps us at the cap.
+        for i in 0..(super::INVOCATIONS_CAP + 5) {
+            db.record_invocation(&InvocationRecord {
+                command: "git".into(),
+                subcommand: format!("s{i}"),
+                raw_tokens: 100,
+                filtered_tokens: 20,
+                had_plugin: true,
+                exit_code: 0,
+            }).unwrap();
+        }
+        let count: i64 = db.conn
+            .query_row("SELECT COUNT(*) FROM invocations", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, super::INVOCATIONS_CAP);
+    }
+
+    #[test]
+    fn history_ranking_orders_by_score() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(tmp.path()).unwrap();
+
+        // "cargo build": 5 × 2000 × 0.05 savings = score 500 (big but barely filtered)
+        for _ in 0..5 {
+            db.record_invocation(&InvocationRecord {
+                command: "cargo".into(), subcommand: "build".into(),
+                raw_tokens: 2000, filtered_tokens: 1900,
+                had_plugin: false, exit_code: 0,
+            }).unwrap();
+        }
+        // "git status": 10 × 30 × 0.9 savings = score 270 (small and well-filtered)
+        for _ in 0..10 {
+            db.record_invocation(&InvocationRecord {
+                command: "git".into(), subcommand: "status".into(),
+                raw_tokens: 30, filtered_tokens: 3,
+                had_plugin: true, exit_code: 0,
+            }).unwrap();
+        }
+
+        let ranking = db.history_ranking(10).unwrap();
+        assert_eq!(ranking.len(), 2);
+        assert_eq!(ranking[0].command, "cargo");
+        assert_eq!(ranking[0].subcommand, "build");
+        assert_eq!(ranking[1].command, "git");
     }
 
     #[test]

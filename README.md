@@ -96,6 +96,7 @@ lowfat config             # show resolved config and validate .lowfat
 lowfat filters            # list enabled/disabled filters
 lowfat pipeline git       # show active pipeline for a command
 lowfat gain               # show lifetime token savings report
+lowfat history candidates # rank your most-used commands as plugin candidates
 lowfat audit              # show recent plugin executions
 lowfat status             # show status badge
 ```
@@ -136,6 +137,14 @@ All settings can also be overridden with environment variables:
 | `LOWFAT_DISABLE` | Comma-separated filters to disable                               |
 | `LOWFAT_HOME`    | Plugin/config home (default: `~/.lowfat`)                        |
 | `LOWFAT_DATA`    | Data directory for history db (default: `~/.local/share/lowfat`) |
+
+### Local usage history
+
+lowfat keeps a small SQLite db at `$LOWFAT_DATA/history.db` (default `~/.local/share/lowfat/history.db`). Nothing is sent anywhere — it's purely local.
+
+`lowfat history candidates` (or bare `lowfat history`) uses it to surface commands that are worth writing a plugin for: called often, produce large output, and aren't being shrunk much yet. Only the command name and first non-flag arg (e.g. `git`, `status`) are stored per invocation — never full arguments, output, paths, or secrets. Retention is capped at 10,000 rows; oldest are evicted automatically.
+
+Reset the db any time with `rm ~/.local/share/lowfat/history.db` — it's recreated on the next run.
 
 Env vars take priority over `.lowfat` file.
 

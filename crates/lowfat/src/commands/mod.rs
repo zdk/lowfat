@@ -3,6 +3,7 @@ pub mod config;
 pub mod filters;
 pub mod gain;
 pub mod help;
+pub mod candidates;
 pub mod hook;
 pub mod level;
 pub mod pipeline;

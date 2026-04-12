@@ -39,6 +39,11 @@ enum Commands {
         /// Command to show pipeline for (e.g., git)
         cmd: String,
     },
+    /// Local usage history (powers plugin candidate ranking)
+    History {
+        #[command(subcommand)]
+        action: Option<HistoryAction>,
+    },
     /// Show plugin audit log
     Audit {
         /// Number of entries to show
@@ -57,6 +62,16 @@ enum Commands {
     Plugin {
         #[command(subcommand)]
         action: PluginAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum HistoryAction {
+    /// Rank command usage as plugin candidates
+    Candidates {
+        /// Number of rows to show
+        #[arg(default_value = "20")]
+        limit: usize,
     },
 }
 
@@ -101,6 +116,10 @@ fn main() {
         Some(Commands::Status) => commands::status::run(),
         Some(Commands::Pipeline { cmd }) => commands::pipeline::run(&cmd),
         Some(Commands::Audit { limit }) => commands::audit::run(limit),
+        Some(Commands::History { action }) => match action {
+            Some(HistoryAction::Candidates { limit }) => commands::candidates::run(limit),
+            None => commands::candidates::run(20),
+        },
         Some(Commands::ShellInit { shell }) => commands::shell_init::run(&shell),
         Some(Commands::Plugin { action }) => match action {
             PluginAction::List => commands::plugin::list(),

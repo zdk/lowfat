@@ -1,6 +1,6 @@
 use crate::filters;
 use lowfat_core::config::RunfConfig;
-use lowfat_core::db::{Db, TrackRecord};
+use lowfat_core::db::{Db, InvocationRecord, TrackRecord};
 use lowfat_core::pipeline::{Pipeline, StageType};
 use lowfat_core::tee;
 use lowfat_plugin::discovery::{discover_plugins, resolve_plugins, DiscoveredPlugin};
@@ -87,6 +87,15 @@ pub fn run(args: &[String]) -> i32 {
                 .map(|p| p.to_string_lossy().to_string())
                 .unwrap_or_default(),
         });
+        // Usage history — command+subcommand only, no args. Powers `lowfat history`.
+        let _ = db.record_invocation(&InvocationRecord {
+            command: cmd.clone(),
+            subcommand: history_subcommand(&subcommand),
+            raw_tokens: lowfat_core::tokens::estimate_tokens(&raw) as u64,
+            filtered_tokens: lowfat_core::tokens::estimate_tokens(&filtered) as u64,
+            had_plugin: filter_name.is_some(),
+            exit_code,
+        });
     }
 
     // Tee on failure
@@ -171,6 +180,12 @@ fn load_external_plugin(
     None
 }
 
+/// Normalise the first arg into a subcommand for history. Flags (e.g. `-la`)
+/// are not subcommands, so commands like `ls -la` are grouped under `""`.
+fn history_subcommand(first: &str) -> String {
+    if first.starts_with('-') { String::new() } else { first.to_string() }
+}
+
 /// Run command unfiltered, still track as passthrough.
 fn passthrough(cmd: &str, args: &[String], config: &RunfConfig) -> i32 {
     let start = Instant::now();
@@ -195,6 +210,16 @@ fn passthrough(cmd: &str, args: &[String], config: &RunfConfig) -> i32 {
             project_path: std::env::current_dir()
                 .map(|p| p.to_string_lossy().to_string())
                 .unwrap_or_default(),
+        });
+        let subcommand = args.first().cloned().unwrap_or_default();
+        let tokens = lowfat_core::tokens::estimate_tokens(&raw) as u64;
+        let _ = db.record_invocation(&InvocationRecord {
+            command: cmd.to_string(),
+            subcommand: history_subcommand(&subcommand),
+            raw_tokens: tokens,
+            filtered_tokens: tokens,
+            had_plugin: false,
+            exit_code,
         });
     }
 
