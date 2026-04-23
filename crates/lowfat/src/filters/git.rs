@@ -162,9 +162,11 @@ fn filter_show(raw: &str, level: Level) -> String {
                 .collect::<Vec<_>>()
                 .join("\n")
         }
+        // Full: commit header + diff-content lines (same treatment as `git diff`).
+        // Drops unchanged context, index/mode meta, --- / +++ path markers, blanks.
         Level::Full => {
             raw.lines()
-                .filter(|l| !is_index_meta(l))
+                .filter(|l| is_commit_header(l) || is_diff_line(l))
                 .take(100)
                 .collect::<Vec<_>>()
                 .join("\n")
@@ -197,6 +199,14 @@ fn is_diff_line(l: &str) -> bool {
 
 fn is_diff_header(l: &str) -> bool {
     l.starts_with("diff --git") || l.starts_with("@@ ")
+}
+
+fn is_commit_header(l: &str) -> bool {
+    l.starts_with("commit ")
+        || l.starts_with("Merge:")
+        || l.starts_with("Author:")
+        || l.starts_with("Date:")
+        || l.starts_with("    ")
 }
 
 fn is_index_meta(l: &str) -> bool {
@@ -240,6 +250,35 @@ mod tests {
         assert!(out.contains("diff --git"));
         assert!(out.contains("@@ "));
         assert!(!out.contains("-old"));
+    }
+
+    #[test]
+    fn show_full_drops_context_and_meta() {
+        let raw = "\
+commit abc123
+Author: zdk
+Date:   Mon
+
+    fix bug
+
+diff --git a/f b/f
+index abc..def 100644
+--- a/f
++++ b/f
+@@ -1,3 +1,3 @@
+ unchanged context
+-old line
++new line
+ more context
+";
+        let out = filter_show(raw, Level::Full);
+        assert!(out.contains("commit abc123"));
+        assert!(out.contains("    fix bug"));
+        assert!(out.contains("diff --git"));
+        assert!(out.contains("-old line"));
+        assert!(out.contains("+new line"));
+        assert!(!out.contains("unchanged context"), "should drop context: {out}");
+        assert!(!out.contains("index abc"), "should drop index meta: {out}");
     }
 
     #[test]

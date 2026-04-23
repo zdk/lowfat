@@ -48,8 +48,8 @@ case "$SUB" in
         echo "$RAW" | grep -E '^(commit |Author:|Date:|    |diff --git)' | head -n 20
         ;;
       *)
-        # Strip index/mode metadata
-        echo "$RAW" | grep -v -E '^(index |mode |similarity )' | head -n 100
+        # Commit header + diff-content lines (drops context + index/mode meta)
+        echo "$RAW" | grep -E '^(commit |Merge:|Author:|Date:|    |diff |--- |\+\+\+ |@@ |[+-])' | head -n 100
         ;;
     esac
     ;;
