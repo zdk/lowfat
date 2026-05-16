@@ -23,11 +23,15 @@ pub struct RunfConfig {
 impl RunfConfig {
     /// Resolve configuration from environment and .lowfat config walking.
     pub fn resolve() -> Self {
-        let home_dir = env::var("LOWFAT_HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| {
-                dirs_home().join(".lowfat")
-            });
+        let lowfat_home = env::var("LOWFAT_HOME").ok();
+        let xdg_config_home = env::var("XDG_CONFIG_HOME").ok();
+        let home = dirs_home();
+        let home_dir = resolve_home_dir(
+            lowfat_home.as_deref(),
+            xdg_config_home.as_deref(),
+            &home,
+            &|p| p.exists(),
+        );
 
         let data_dir = env::var("LOWFAT_DATA")
             .map(PathBuf::from)
@@ -158,6 +162,59 @@ fn dirs_home() -> PathBuf {
         .unwrap_or_else(|_| PathBuf::from("/tmp"))
 }
 
+/// Resolve the plugin / config home directory.
+///
+/// Precedence (highest to lowest):
+///   1. `$LOWFAT_HOME` — explicit override always wins
+///   2. `$XDG_CONFIG_HOME/lowfat` if `XDG_CONFIG_HOME` is set
+///   3. `~/.config/lowfat` if that directory already exists (XDG default)
+///   4. `~/.lowfat` — legacy default, kept for backward compatibility
+///
+/// When both an XDG path and the legacy `~/.lowfat` exist, prints a
+/// one-shot warning to stderr and prefers XDG. Pure function — takes
+/// env vars + a `path_exists` closure so tests don't touch the real fs.
+pub fn resolve_home_dir(
+    lowfat_home: Option<&str>,
+    xdg_config_home: Option<&str>,
+    home: &std::path::Path,
+    path_exists: &dyn Fn(&std::path::Path) -> bool,
+) -> PathBuf {
+    if let Some(h) = lowfat_home {
+        return PathBuf::from(h);
+    }
+
+    let legacy = home.join(".lowfat");
+
+    if let Some(xdg) = xdg_config_home {
+        let xdg_path = PathBuf::from(xdg).join("lowfat");
+        warn_if_both_exist(&xdg_path, &legacy, path_exists);
+        return xdg_path;
+    }
+
+    let xdg_default = home.join(".config").join("lowfat");
+    if path_exists(&xdg_default) {
+        warn_if_both_exist(&xdg_default, &legacy, path_exists);
+        return xdg_default;
+    }
+
+    legacy
+}
+
+fn warn_if_both_exist(
+    chosen: &std::path::Path,
+    legacy: &std::path::Path,
+    path_exists: &dyn Fn(&std::path::Path) -> bool,
+) {
+    if chosen != legacy && path_exists(chosen) && path_exists(legacy) {
+        eprintln!(
+            "[lowfat] warning: both {} and {} exist; using {}. Remove one to silence this.",
+            chosen.display(),
+            legacy.display(),
+            chosen.display(),
+        );
+    }
+}
+
 /// Find the .lowfat config path (exposed for display purposes).
 pub fn find_config_display() -> Option<PathBuf> {
     find_config()
@@ -197,6 +254,62 @@ mod tests {
         };
         assert!(!config.is_enabled("npm"));
         assert!(config.is_enabled("git"));
+    }
+
+    #[test]
+    fn home_explicit_lowfat_home_wins() {
+        let r = resolve_home_dir(
+            Some("/custom/lf"),
+            Some("/wrong/.config"),
+            std::path::Path::new("/home/user"),
+            &|_| true,
+        );
+        assert_eq!(r, PathBuf::from("/custom/lf"));
+    }
+
+    #[test]
+    fn home_xdg_env_used_when_set_even_if_path_missing() {
+        let r = resolve_home_dir(
+            None,
+            Some("/explicit/.config"),
+            std::path::Path::new("/home/user"),
+            &|_| false,
+        );
+        assert_eq!(r, PathBuf::from("/explicit/.config/lowfat"));
+    }
+
+    #[test]
+    fn home_xdg_default_used_when_path_exists() {
+        let home = PathBuf::from("/home/user");
+        let xdg = home.join(".config/lowfat");
+        let r = resolve_home_dir(None, None, &home, &|p| p == xdg.as_path());
+        assert_eq!(r, xdg);
+    }
+
+    #[test]
+    fn home_legacy_used_when_neither_xdg_set_nor_exists() {
+        let r = resolve_home_dir(
+            None,
+            None,
+            std::path::Path::new("/home/user"),
+            &|_| false,
+        );
+        assert_eq!(r, PathBuf::from("/home/user/.lowfat"));
+    }
+
+    #[test]
+    fn home_legacy_used_when_only_legacy_exists() {
+        let home = PathBuf::from("/home/user");
+        let legacy = home.join(".lowfat");
+        let r = resolve_home_dir(None, None, &home, &|p| p == legacy.as_path());
+        assert_eq!(r, legacy);
+    }
+
+    #[test]
+    fn home_xdg_wins_when_both_exist() {
+        let home = PathBuf::from("/home/user");
+        let r = resolve_home_dir(None, None, &home, &|_| true);
+        assert_eq!(r, home.join(".config/lowfat"));
     }
 
     #[test]

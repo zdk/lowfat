@@ -60,14 +60,26 @@ Run `lowfat info --config` to see the resolved config and validate your `.lowfat
 
 ## Environment variables
 
-| Env var          | Effect                                                           |
-| ---------------- | ---------------------------------------------------------------- |
-| `LOWFAT_LEVEL`   | Override level (`lite`, `full`, `ultra`)                         |
-| `LOWFAT_DISABLE` | Comma-separated filters to disable                               |
-| `LOWFAT_HOME`    | Plugin/config home (default: `~/.lowfat`)                        |
-| `LOWFAT_DATA`    | Data directory for history db (default: `~/.local/share/lowfat`) |
+| Env var             | Effect                                                              |
+| ------------------- | ------------------------------------------------------------------- |
+| `LOWFAT_LEVEL`      | Override level (`lite`, `full`, `ultra`)                            |
+| `LOWFAT_DISABLE`    | Comma-separated filters to disable                                  |
+| `LOWFAT_HOME`       | Plugin/config home — overrides the resolution order below           |
+| `XDG_CONFIG_HOME`   | If set, plugin/config home is `$XDG_CONFIG_HOME/lowfat`             |
+| `LOWFAT_DATA`       | Data directory for history db (default: `~/.local/share/lowfat`)    |
 
 Env vars take priority over `.lowfat`. History and gain data live at `$LOWFAT_DATA/history.db` (default `~/.local/share/lowfat/history.db`) — delete the file to reset.
+
+### Where the plugin/config home lives
+
+Resolved top-down, first match wins:
+
+1. **`$LOWFAT_HOME`** if set — explicit override
+2. **`$XDG_CONFIG_HOME/lowfat`** if `XDG_CONFIG_HOME` is set
+3. **`~/.config/lowfat`** if that directory already exists (XDG default)
+4. **`~/.lowfat`** — legacy default, kept for backward compatibility
+
+To opt into the XDG location on an existing install, `mkdir -p ~/.config/lowfat && mv ~/.lowfat/* ~/.config/lowfat/ && rmdir ~/.lowfat`. If both paths exist, lowfat prefers the XDG path and prints a one-line warning to stderr.
 
 ## Filtering any command without writing a plugin
 
