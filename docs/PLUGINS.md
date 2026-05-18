@@ -75,6 +75,8 @@ First match wins. Order matters: put specific rules before catch-alls.
 
 Regex uses `/.../` delimiters (escape `/` as `\/`). Built-in ops are pure Rust — no subprocess overhead.
 
+Ops run top-to-bottom as a pipeline — each one receives the previous op's output. Combinations compose by intersection: `keep /error/` then `drop /ignored/` keeps lines matching `error` AND not matching `ignored`. Order matters: `keep /X/` then `drop /X/` produces nothing.
+
 ## Escape hatches (subprocess)
 
 | Op | Form | Notes |
