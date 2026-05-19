@@ -28,8 +28,6 @@ Plugins read `$LOWFAT_LEVEL` (in `.sh`) or `$level` (in `.lf`) and tune row caps
 | `stats`       | lifetime token savings; with `--audit`, recent plugin executions                                 |
 | `history`     | plugin candidates ranked by cost; plus `prune` / `export` subcommands                            |
 
-Old names (`status`, `config`, `filters`, `pipeline <cmd>`, `gain`, `audit`) still work as hidden aliases for one release.
-
 ## The `.lowfat` config file
 
 Optional. Create a `.lowfat` file in your project root (or any parent directory — lowfat walks up to find it). All built-in filters and plugins are active by default.
