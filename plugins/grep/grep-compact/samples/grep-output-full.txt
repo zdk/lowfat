@@ -1,0 +1,21 @@
+crates/lowfat-plugin/src/plugin.rs:42:pub trait FilterPlugin: Send + Sync {
+crates/lowfat-runner/tests/e2e_plugin.rs:8:use lowfat_plugin::plugin::{FilterInput, FilterPlugin, PluginInfo};
+crates/lowfat-runner/tests/e2e_plugin.rs:479:    let mut plugin_map: HashMap<String, Box<dyn FilterPlugin>> = HashMap::new();
+crates/lowfat-runner/src/runner.rs:4:use lowfat_plugin::plugin::{FilterInput, FilterPlugin, PluginInfo};
+crates/lowfat-runner/src/runner.rs:11:/// Loads a discovered plugin into a runnable [`FilterPlugin`]. Dispatches by
+crates/lowfat-runner/src/runner.rs:22:    pub fn load(plugin: &DiscoveredPlugin) -> Result<Box<dyn FilterPlugin>> {
+crates/lowfat-runner/src/runner.rs:81:    plugin_map: &HashMap<String, Box<dyn FilterPlugin>>,
+crates/lowfat-runner/src/lf_filter.rs:3:use lowfat_plugin::plugin::{FilterInput, FilterOutput, FilterPlugin, PluginInfo};
+crates/lowfat-runner/src/lf_filter.rs:42:impl FilterPlugin for LfFilter {
+crates/lowfat/src/filters/mod.rs:7:use lowfat_plugin::plugin::FilterPlugin;
+crates/lowfat/src/filters/mod.rs:10:pub fn builtins() -> HashMap<String, Box<dyn FilterPlugin>> {
+crates/lowfat-runner/src/process.rs:2:use lowfat_plugin::plugin::{FilterInput, FilterOutput, FilterPlugin, PluginInfo};
+crates/lowfat-runner/src/process.rs:15:impl FilterPlugin for ProcessFilter {
+crates/lowfat-runner/benches/runner_bench.rs:4:use lowfat_plugin::plugin::{FilterInput, FilterOutput, FilterPlugin, PluginInfo};
+crates/lowfat-runner/benches/runner_bench.rs:11:impl FilterPlugin for NoopPlugin {
+crates/lowfat-runner/benches/runner_bench.rs:52:    let mut plugins: HashMap<String, Box<dyn FilterPlugin>> = HashMap::new();
+crates/lowfat/src/commands/run.rs:7:use lowfat_plugin::plugin::{FilterInput, FilterPlugin};
+crates/lowfat/src/commands/run.rs:58:    let mut plugin_map: HashMap<String, Box<dyn FilterPlugin>> = all_filters;
+crates/lowfat/src/commands/run.rs:149:    builtins: &HashMap<String, Box<dyn FilterPlugin>>,
+crates/lowfat/src/commands/run.rs:211:) -> Option<Box<dyn FilterPlugin>> {
+crates/lowfat/src/commands/run.rs:266:    builtins: &HashMap<String, Box<dyn FilterPlugin>>,

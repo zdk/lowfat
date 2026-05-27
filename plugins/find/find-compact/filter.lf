@@ -1,0 +1,22 @@
+#!/usr/bin/env lowfat-filter
+# find-compact — compact find output for LLM contexts.
+# env: $sub $level $exit $args
+#
+# `find` writes results to stdout and permission errors to stderr (combined
+# by lowfat). On a non-zero exit (any path errored), preserve raw output so
+# the user sees what went wrong.
+
+*:
+    if exit failed:
+        raw
+    else:
+        match level:
+            ultra:
+                head 20
+                or "find: no matches"
+            lite:
+                head 200
+                or "find: no matches"
+            else:
+                head 60
+                or "find: no matches"

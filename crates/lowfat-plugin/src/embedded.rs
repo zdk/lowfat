@@ -37,4 +37,22 @@ pub const EMBEDDED: &[EmbeddedPlugin] = &[
         manifest: include_str!("../../../plugins/ls/ls-compact/lowfat.toml"),
         filter_lf: include_str!("../../../plugins/ls/ls-compact/filter.lf"),
     },
+    EmbeddedPlugin {
+        category: "find",
+        name: "find-compact",
+        manifest: include_str!("../../../plugins/find/find-compact/lowfat.toml"),
+        filter_lf: include_str!("../../../plugins/find/find-compact/filter.lf"),
+    },
+    EmbeddedPlugin {
+        category: "grep",
+        name: "grep-compact",
+        manifest: include_str!("../../../plugins/grep/grep-compact/lowfat.toml"),
+        filter_lf: include_str!("../../../plugins/grep/grep-compact/filter.lf"),
+    },
+    EmbeddedPlugin {
+        category: "tree",
+        name: "tree-compact",
+        manifest: include_str!("../../../plugins/tree/tree-compact/lowfat.toml"),
+        filter_lf: include_str!("../../../plugins/tree/tree-compact/filter.lf"),
+    },
 ];

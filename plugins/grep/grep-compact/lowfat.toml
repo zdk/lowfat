@@ -1,0 +1,5 @@
+[plugin]
+name = "grep-compact"
+version = "0.5.5"
+description = "Compact grep output for LLM contexts (recursive matches explode quickly)"
+commands = ["grep"]

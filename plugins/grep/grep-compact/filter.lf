@@ -1,0 +1,20 @@
+#!/usr/bin/env lowfat-filter
+# grep-compact — compact grep output for LLM contexts.
+# env: $sub $level $exit $args
+#
+# grep exit codes:
+#   0 → matches found     (typical signal)
+#   1 → no matches        (empty output; not a real failure)
+#   2 → actual error      (preserve stderr)
+# `if exit failed` covers both 1 and 2 — `raw` is empty for 1 and carries
+# the error for 2; `or` fills in the no-match verdict.
+
+*:
+    if exit failed:
+        raw
+        or "grep: no matches"
+    else:
+        match level:
+            ultra: head 20
+            lite:  head 200
+            else:  head 60

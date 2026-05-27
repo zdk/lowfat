@@ -1,0 +1,46 @@
+crates
+├── lowfat
+│   ├── Cargo.toml
+│   └── src
+│       ├── commands
+│       ├── filters
+│       └── main.rs
+├── lowfat-core
+│   ├── benches
+│   │   └── core_bench.rs
+│   ├── Cargo.toml
+│   └── src
+│       ├── config.rs
+│       ├── db.rs
+│       ├── level.rs
+│       ├── lf.rs
+│       ├── lib.rs
+│       ├── pipeline.rs
+│       ├── redact.rs
+│       ├── tee.rs
+│       └── tokens.rs
+├── lowfat-plugin
+│   ├── benches
+│   │   └── plugin_bench.rs
+│   ├── Cargo.toml
+│   └── src
+│       ├── discovery.rs
+│       ├── embedded.rs
+│       ├── lib.rs
+│       ├── manifest.rs
+│       ├── plugin.rs
+│       └── security.rs
+└── lowfat-runner
+    ├── benches
+    │   └── runner_bench.rs
+    ├── Cargo.toml
+    ├── src
+    │   ├── lf_filter.rs
+    │   ├── lib.rs
+    │   ├── process.rs
+    │   └── runner.rs
+    └── tests
+        ├── e2e_plugin.rs
+        └── lf_plugins.rs
+
+15 directories, 29 files

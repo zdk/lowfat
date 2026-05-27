@@ -1,0 +1,16 @@
+#!/usr/bin/env lowfat-filter
+# tree-compact — compact tree output for LLM contexts.
+# env: $sub $level $exit $args
+#
+# `tree` always exits 0 unless given a nonexistent path. The output ends
+# with a "N directories, M files" summary line — kept at all levels so the
+# LLM has the totals even when the body is truncated.
+
+*:
+    if exit failed:
+        raw
+    else:
+        match level:
+            ultra: head 30
+            lite:  head 200
+            else:  head 60
