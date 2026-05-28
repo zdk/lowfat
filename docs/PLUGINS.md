@@ -37,8 +37,9 @@ commands = ["kubectl"]
 subcommands = ["get", "describe", "logs", "apply"]
 ```
 
-- `commands` — top-level command(s) intercepted (e.g., `kubectl`)
+- `commands` — top-level command(s) intercepted (e.g., `kubectl`); list shorthand aliases here too (e.g., `k`)
 - `subcommands` — which subcommands this plugin handles (omit to handle all)
+- `bin` — optional real binary to exec when invoked via an alias; e.g. `commands = ["kubectl", "k"]` + `bin = "kubectl"` makes `lowfat k …` run `kubectl` even though `k` is only a shell alias
 - the entrypoint is auto-detected (`filter.lf`, else `filter.sh`) — add a `[runtime]` table only to override it or declare `requires`
 
 ---
@@ -408,8 +409,9 @@ name = "kubectl-compact"
 version = "0.1.0"
 description = "Compact kubectl output"
 author = "you"
-commands = ["kubectl"]
+commands = ["kubectl", "k"]   # list shorthand aliases too
 subcommands = ["get", "describe", "logs", "apply"]
+bin = "kubectl"               # exec this binary even when invoked as the alias `k`
 
 [runtime]
 entry = "filter.lf"       # optional — auto-detected (filter.lf, else filter.sh)
