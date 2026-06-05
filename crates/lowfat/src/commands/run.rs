@@ -48,6 +48,26 @@ pub fn run(args: &[String]) -> i32 {
         }
     };
 
+    // Skip filtering for tiny outputs — overhead exceeds any possible savings.
+    const MIN_FILTER_TOKENS: usize = 128;
+    if lowfat_core::tokens::estimate_tokens(&raw) < MIN_FILTER_TOKENS {
+        if let Ok(db) = Db::open(&config.data_dir) {
+            let _ = db.record_invocation(&InvocationRecord {
+                command: cmd.clone(),
+                subcommand: subcommand.clone(),
+                raw_tokens: lowfat_core::tokens::estimate_tokens(&raw) as u64,
+                filtered_tokens: lowfat_core::tokens::estimate_tokens(&raw) as u64,
+                had_plugin: false,
+                in_scope: false,
+                reduced: false,
+                is_external_plugin: false,
+                exit_code,
+            });
+        }
+        print!("{raw}");
+        return exit_code;
+    }
+
     // Resolve which filter/pipeline to use. A trusted external plugin
     // overrides a same-named builtin.
     let resolved = resolve_filter(
