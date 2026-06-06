@@ -8,7 +8,7 @@
 lowfat is a lightweight CLI tool that reduces AI token costs by filtering unnecessary CLI output before it reaches your agent.
 
 <p align="center">
-  <img src="docs/demo.gif" alt="lowfat demo: git diff before and after" width="700">
+  <img src="docs/demo.gif" alt="lowfat demo: condensing verbose git output (diff, log) before it reaches the agent" width="700">
 </p>
 
 ### Core focus
