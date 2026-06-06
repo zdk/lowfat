@@ -18,6 +18,58 @@ lowfat is a lightweight CLI tool that reduces AI token costs by filtering unnece
 - **Composable** — UNIX-style pipes, mix built-ins and your own filters; not magic.
 - **User-owned** — `lowfat history` shows what you run most; allow you to customize for your usecase.
 
+### Before / after
+
+`git status` at the `full` level — same signal, less noise.
+
+**Before** — raw `git status`:
+
+```
+On branch main
+Your branch is up to date with 'origin/main'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   crates/lowfat-cli/src/commands/plugin.rs
+	modified:   crates/lowfat-cli/src/main.rs
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	plugins/git/git-compact/samples/
+
+no changes added to commit (use "git add" and/or "git commit -a")
+```
+
+**After** — `lowfat git status`:
+
+```
+On branch main
+Changes not staged for commit:
+	modified:   crates/lowfat-cli/src/commands/plugin.rs
+	modified:   crates/lowfat-cli/src/main.rs
+Untracked files:
+	plugins/git/git-compact/samples/
+```
+
+Reduction of **raw command output**, measured on the bundled samples
+(`crates/lowfat-plugin/embedded/*/samples/`). Reproduce with
+`cat <sample> | lowfat filter <plugin>/filter.lf --sub=<sub> --level=<level>`:
+
+| command         | `lite` | `full` | `ultra` |
+| --------------- | -----: | -----: | ------: |
+| `git diff`      |   -16% |   -38% |    -96% |
+| `git log`       |   -53% |   -80% |    -91% |
+| `git status`    |   -62% |   -62% |    -74% |
+| `docker ps`     |   -38% |   -38% |    -85% |
+| `docker images` |   -48% |   -58% |    -86% |
+| `ls -la`        |    -2% |   -75% |    -87% |
+
+> These percentages are the reduction of a single command's output, not your end-to-end agent token usage.
+> savings depend on how much of your context is command output
+> and how lossy a level you pick — higher levels drop more, so verify your agent still has what it needs.
+> treat the table as a ceiling on the output slice, not a promise on the total.
+
 ### Install
 
 ```sh
@@ -60,7 +112,7 @@ lowfat opencode install   # writes ~/.config/opencode/plugins/lowfat.ts
 ```
 
 Restart OpenCode; commands are rewritten transparently before they run.
-Remove it anytime with `lowfat opencode uninstall`.
+Uninstall with `lowfat opencode uninstall`.
 
 **Direct usage** — prefix any command:
 
@@ -117,6 +169,40 @@ cat samples/git-diff-full.txt | lowfat filter --explain ./filter.lf --sub=diff -
 - [ecotokens](https://github.com/hansipie/ecotokens)
 - [token-enhancer](https://github.com/xelektron/token-enhancer)
 
+## vs rtk
+
+[rtk](https://github.com/rtk-ai/rtk) is the closest tool but differ in philosophy: rtk is batteries-included; lowfat is a minimal
+core you extend yourself.
+
+|                        | lowfat                                                    | rtk                                               |
+| ---------------------- | --------------------------------------------------------- | ------------------------------------------------- |
+| Built-in commands      | 6 curated (`git`, `docker`, `grep`, `find`, `ls`, `tree`) | 100+ across many ecosystems                       |
+| Custom filters         | `.lf` DSL + shell + Python (PEP 723/uv)                   | TOML DSL                                          |
+| Levels                 | `lite` / `full` / `ultra`                                 | `-l aggressive`, `--ultra-compact`                |
+| File-content filtering | `grep` / `find` plugins                                   | `rtk read` / `smart` (signatures, summaries)      |
+| Agent integrations     | Claude Code, OpenCode, shell, Pi                          | 14 tools (Claude Code, Copilot, Gemini, Codex, …) |
+| Telemetry              | None — local-only                                         | Opt-in, off by default (anonymous aggregate)      |
+| Savings analytics      | `lowfat stats` / `history` (local)                        | `rtk gain` / `discover` (local)                   |
+
+### Token savings, head-to-head
+
+Same commands, same repo, same `cwd`, run through both tools. Output tokens
+counted with `tiktoken` (`cl100k_base`); savings are vs the raw command output:
+
+| command      | raw tokens | lowfat `full` | lowfat `ultra` |  rtk |
+| ------------ | ---------: | ------------: | -------------: | ---: |
+| `git status` |         81 |          -91% |           -91% | -79% |
+| `git diff`   |       1241 |          -15% |           -97% |  -9% |
+| `git log`    |       3350 |          -93% |           -97% | -56% |
+| `ls -la`     |        153 |          -77% |           -89% | -86% |
+| `find`       |        535 |           -0% |           -58% | -66% |
+
+Honest read: lowfat compresses git harder; rtk edges out `find`; `ls` is close.
+`find` only engages at lowfat's `ultra` level. rtk's `--ultra-compact` gave
+near-identical numbers to its default here, so the default is shown. This is a
+single small run on one repo — directional, not a benchmark; measure on your own
+workload before trusting any of it.
+
 ## License
 
 Apache-2.0
@@ -124,3 +210,13 @@ Apache-2.0
 ## AI notice
 
 Multiple AI tools were used for this project
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=zdk%2Flowfat&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=zdk/lowfat&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=zdk/lowfat&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=zdk/lowfat&type=date&legend=top-left" />
+ </picture>
+</a>
