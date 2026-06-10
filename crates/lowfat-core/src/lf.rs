@@ -1593,7 +1593,10 @@ fn run_filter_child(
         .spawn()
         .with_context(|| format!("spawning {what}"))?;
 
-    let mut stdin = child.stdin.take().expect("stdin is piped");
+    let mut stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| anyhow!("{what}: stdin not piped"))?;
     let data = stdin_data.as_bytes().to_vec();
     let writer = std::thread::spawn(move || match stdin.write_all(&data) {
         Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
@@ -1605,7 +1608,7 @@ fn run_filter_child(
         .with_context(|| format!("waiting for {what}"))?;
     writer
         .join()
-        .expect("stdin writer panicked")
+        .map_err(|_| anyhow!("{what} stdin writer panicked"))?
         .with_context(|| format!("writing to {what} stdin"))?;
 
     if !output.status.success() {

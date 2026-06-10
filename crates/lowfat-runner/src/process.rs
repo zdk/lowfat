@@ -42,14 +42,17 @@ impl FilterPlugin for ProcessFilter {
         // (issue #9; same pattern as lowfat-core's run_filter_child).
         let writer = child.stdin.take().map(|mut stdin| {
             let data = input.raw.clone();
-            std::thread::spawn(move || {
-                let _ = stdin.write_all(data.as_bytes());
+            std::thread::spawn(move || match stdin.write_all(data.as_bytes()) {
+                Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
+                r => r,
             })
         });
 
         let output = child.wait_with_output()?;
         if let Some(w) = writer {
-            let _ = w.join();
+            w.join()
+                .map_err(|_| anyhow::anyhow!("plugin stdin writer panicked"))?
+                .with_context(|| format!("writing to plugin stdin: {entry}"))?;
         }
         let text = String::from_utf8_lossy(&output.stdout).to_string();
 
