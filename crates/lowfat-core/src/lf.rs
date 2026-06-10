@@ -1572,10 +1572,17 @@ fn expand_args(body: &str, args: &[MacroArg]) -> String {
     out
 }
 
-fn run_shell(cmd: &str, stdin_data: &str, ctx: &ExecCtx) -> Result<String> {
-    let mut child = Command::new("sh")
-        .arg("-c")
-        .arg(cmd)
+/// Spawn a filter child, stream `stdin_data` to it, collect stdout.
+/// Stdin is written from a thread: head-style filters exit before
+/// draining stdin (EPIPE is expected, issue #9), and a threaded write
+/// can't deadlock against an output pipe that fills first.
+fn run_filter_child(
+    mut cmd: Command,
+    what: &str,
+    stdin_data: &str,
+    ctx: &ExecCtx,
+) -> Result<String> {
+    let mut child = cmd
         .env("level", ctx.level.to_string())
         .env("sub", ctx.sub)
         .env("exit", ctx.exit_code.to_string())
@@ -1584,24 +1591,41 @@ fn run_shell(cmd: &str, stdin_data: &str, ctx: &ExecCtx) -> Result<String> {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .context("spawning sh")?;
+        .with_context(|| format!("spawning {what}"))?;
 
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin
-            .write_all(stdin_data.as_bytes())
-            .context("writing to sh stdin")?;
-    }
+    let mut stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| anyhow!("{what}: stdin not piped"))?;
+    let data = stdin_data.as_bytes().to_vec();
+    let writer = std::thread::spawn(move || match stdin.write_all(&data) {
+        Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
+        r => r,
+    });
 
-    let output = child.wait_with_output().context("waiting for sh")?;
+    let output = child
+        .wait_with_output()
+        .with_context(|| format!("waiting for {what}"))?;
+    writer
+        .join()
+        .map_err(|_| anyhow!("{what} stdin writer panicked"))?
+        .with_context(|| format!("writing to {what} stdin"))?;
+
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         bail!(
-            "shell exited {}: {}",
+            "{what} exited {}: {}",
             output.status.code().unwrap_or(-1),
             stderr.trim()
         );
     }
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+fn run_shell(cmd: &str, stdin_data: &str, ctx: &ExecCtx) -> Result<String> {
+    let mut c = Command::new("sh");
+    c.arg("-c").arg(cmd);
+    run_filter_child(c, "sh", stdin_data, ctx)
 }
 
 fn run_python(body: &str, stdin_data: &str, ctx: &ExecCtx) -> Result<String> {
@@ -1618,34 +1642,9 @@ fn has_pep723_header(body: &str) -> bool {
 }
 
 fn run_python_plain(body: &str, stdin_data: &str, ctx: &ExecCtx) -> Result<String> {
-    let mut child = Command::new("python3")
-        .arg("-c")
-        .arg(body)
-        .env("level", ctx.level.to_string())
-        .env("sub", ctx.sub)
-        .env("exit", ctx.exit_code.to_string())
-        .env("args", ctx.args.join(" "))
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .context("spawning python3")?;
-
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin
-            .write_all(stdin_data.as_bytes())
-            .context("writing to python stdin")?;
-    }
-    let output = child.wait_with_output().context("waiting for python")?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!(
-            "python exited {}: {}",
-            output.status.code().unwrap_or(-1),
-            stderr.trim()
-        );
-    }
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    let mut c = Command::new("python3");
+    c.arg("-c").arg(body);
+    run_filter_child(c, "python3", stdin_data, ctx)
 }
 
 /// PEP 723: write the body to a temp file and let `uv run --script` resolve
@@ -1667,33 +1666,9 @@ fn run_python_uv(body: &str, stdin_data: &str, ctx: &ExecCtx) -> Result<String> 
         .ok_or_else(|| anyhow!("non-UTF8 temp path"))?
         .to_string();
 
-    let mut child = Command::new("uv")
-        .args(["run", "--script", &path])
-        .env("level", ctx.level.to_string())
-        .env("sub", ctx.sub)
-        .env("exit", ctx.exit_code.to_string())
-        .env("args", ctx.args.join(" "))
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .context("spawning uv (is `uv` installed?)")?;
-
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin
-            .write_all(stdin_data.as_bytes())
-            .context("writing to uv stdin")?;
-    }
-    let output = child.wait_with_output().context("waiting for uv")?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!(
-            "uv exited {}: {}",
-            output.status.code().unwrap_or(-1),
-            stderr.trim()
-        );
-    }
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    let mut c = Command::new("uv");
+    c.args(["run", "--script", &path]);
+    run_filter_child(c, "uv", stdin_data, ctx)
 }
 
 // ──────────────────────────────────────────────────────────────────
@@ -2172,6 +2147,20 @@ foo:
         );
         let out = execute(&rs, &ctx("foo", Level::Full), "a\nb\n").unwrap();
         assert_eq!(out.trim_end(), "1 a\n2 b");
+    }
+
+    #[test]
+    fn exec_shell_early_exit_on_large_input() {
+        let rs = parse_ok(
+            r#"
+diff:
+    shell: head -n 1
+"#,
+        );
+        let line = "+ a line of diff content that pads out the stream\n";
+        let input = line.repeat(50_000); // ~2.5MB, over every platform's threshold
+        let out = execute(&rs, &ctx("diff", Level::Full), &input).unwrap();
+        assert_eq!(out, line);
     }
 
     #[test]

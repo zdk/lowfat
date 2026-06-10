@@ -543,3 +543,62 @@ fi
     assert!(result.text.contains("ERROR (exit 1)"), "should show error on exit 1");
     assert!(result.text.contains("something broke"), "should preserve raw on error");
 }
+
+// ---------------------------------------------------------------------------
+// User plugins on large input (issue #9) — loaded the way the runner loads
+// them: discovery + HybridRunner, covering both .sh and .lf entry points.
+// ---------------------------------------------------------------------------
+
+fn load_user_plugin(name: &str, entry_file: &str, body: &str) -> Box<dyn FilterPlugin> {
+    let root = std::env::temp_dir().join(format!("lowfat-user-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let dir = root.join(name).join(format!("{name}-compact"));
+    std::fs::create_dir_all(&dir).unwrap();
+    let manifest = format!(
+        "[plugin]\nname = \"{name}-compact\"\nversion = \"0.1.0\"\ncommands = [\"{name}\"]\n"
+    );
+    std::fs::write(dir.join("lowfat.toml"), manifest).unwrap();
+    std::fs::write(dir.join(entry_file), body).unwrap();
+
+    let plugins = lowfat_plugin::discovery::discover_plugins(&root);
+    let plugin = plugins
+        .iter()
+        .find(|p| p.manifest.plugin.name == format!("{name}-compact"))
+        .expect("user plugin discovered");
+    lowfat_runner::runner::HybridRunner::load(plugin).expect("user plugin loads")
+}
+
+fn large_input() -> String {
+    "+ a line of output that pads out the stream\n".repeat(50_000) // ~2.2MB
+}
+
+#[test]
+fn user_sh_plugin_early_exit_on_large_input() {
+    let filter = load_user_plugin("bigsh", "filter.sh", "#!/bin/sh\nhead -n 1\n");
+    let raw = large_input();
+    let result = filter
+        .filter(&make_input(&raw, "bigsh", "", vec![], Level::Full, 0))
+        .unwrap();
+    assert_eq!(result.text.lines().count(), 1);
+}
+
+#[test]
+fn user_sh_plugin_large_output_no_deadlock() {
+    // identity filter: stdout outgrows the pipe buffer while stdin streams
+    let filter = load_user_plugin("bigcat", "filter.sh", "#!/bin/sh\ncat\n");
+    let raw = large_input();
+    let result = filter
+        .filter(&make_input(&raw, "bigcat", "", vec![], Level::Full, 0))
+        .unwrap();
+    assert_eq!(result.text.len(), raw.len());
+}
+
+#[test]
+fn user_lf_plugin_early_exit_on_large_input() {
+    let filter = load_user_plugin("biglf", "filter.lf", "*:\n    shell: head -n 1\n");
+    let raw = large_input();
+    let result = filter
+        .filter(&make_input(&raw, "biglf", "", vec![], Level::Full, 0))
+        .unwrap();
+    assert_eq!(result.text.lines().count(), 1);
+}

@@ -170,6 +170,19 @@ fn git_diff_stat_fallback() {
 }
 
 #[test]
+fn git_diff_large_input_no_broken_pipe() {
+    let plugin = bundled_dir().join("git/git-compact");
+    let sample = std::fs::read_to_string(plugin.join("samples/git-diff-full.txt")).unwrap();
+    let large = sample.repeat(200); // ~2.2MB, over every platform's pipe threshold
+
+    let out = run_lf(&plugin.join("filter.lf"), &large, "diff", Level::Full);
+
+    // must stay at the 200-line cap, not fall back to the raw stream
+    let lines = out.lines().count();
+    assert!(lines <= 200, "output not compacted: {lines} lines");
+}
+
+#[test]
 fn cargo_compact_parity() {
     check_plugin(&fixtures_dir().join("cargo/cargo-compact"), 10.0);
 }
