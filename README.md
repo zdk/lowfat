@@ -94,10 +94,19 @@ Pick one of:
         "matcher": "Bash",
         "hooks": [{ "type": "command", "command": "lowfat hook" }]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Read",
+        "hooks": [{ "type": "command", "command": "lowfat post-read" }]
+      }
     ]
   }
 }
 ```
+
+`PreToolUse` rewrites Bash commands through lowfat filters.
+`PostToolUse` compresses file content after Read — strips comments, collapses function bodies, summarizes lock files.
 
 The filtering pattern [Anthropic recommends](https://code.claude.com/docs/en/costs#offload-processing-to-hooks-and-skills), but via lowfat.
 
@@ -155,6 +164,21 @@ lowfat plugin doctor              # check plugins (and pre-install any Python de
 cat samples/git-diff-full.txt | lowfat filter --explain ./filter.lf --sub=diff --level=ultra
 ```
 
+### File content compression (`post-read`)
+
+When Claude reads files, `lowfat post-read` compresses the content before it enters the context:
+
+| Content type | What it does |
+|---|---|
+| **Source code** (Rust, Python, Go, Elixir, JS/TS, Java, Ruby, C/C++, Shell) | Strip comments, normalize blanks; at `ultra`: collapse function bodies to signatures |
+| **Markdown** | Strip badges, HTML comments; truncate code blocks and tables |
+| **HTML** / Vue / Svelte | Strip `<style>`, `<script>`, class attributes; at `ultra`: text extraction only |
+| **JSON / YAML / TOML** | Truncate large arrays, collapse deep nesting |
+| **Lock files** (Cargo.lock, package-lock.json, yarn.lock, ...) | Replace with summary: package count + top deps |
+| **Unknown** | Head + tail with line count |
+
+Compression level follows `LOWFAT_LEVEL` (lite/full/ultra). Files with <10% savings pass through unchanged.
+
 ### Learn more
 
 - **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — high-level diagram: CLI, Runner, Plugins, Builtins
@@ -181,7 +205,7 @@ core you extend yourself.
 | Built-in commands      | 6 curated (`git`, `docker`, `grep`, `find`, `ls`, `tree`) | 100+ across many ecosystems                       |
 | Custom filters         | `.lf` DSL + shell + Python (PEP 723/uv)                   | TOML DSL                                          |
 | Levels                 | `lite` / `full` / `ultra`                                 | `-l aggressive`, `--ultra-compact`                |
-| File-content filtering | `grep` / `find` plugins                                   | `rtk read` / `smart` (signatures, summaries)      |
+| File-content filtering | `post-read` hook (code, markdown, HTML, data, lock files)  | `rtk read` / `smart` (signatures, summaries)      |
 | Agent integrations     | Claude Code, OpenCode, shell, Pi                          | 14 tools (Claude Code, Copilot, Gemini, Codex, …) |
 | Telemetry              | None — local-only                                         | Opt-in, off by default (anonymous aggregate)      |
 | Savings analytics      | `lowfat stats` / `history` (local)                        | `rtk gain` / `discover` (local)                   |
