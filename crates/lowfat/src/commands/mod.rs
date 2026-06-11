@@ -13,6 +13,7 @@ pub mod level;
 pub mod opencode;
 pub mod pipeline;
 pub mod plugin;
+pub mod post_read;
 pub mod rewrite;
 pub mod run;
 pub mod shell_init;
