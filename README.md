@@ -99,6 +99,8 @@ Pick one of:
 }
 ```
 
+The filtering pattern [Anthropic recommends](https://code.claude.com/docs/en/costs#offload-processing-to-hooks-and-skills), but via lowfat.
+
 **Shell integration** — auto-activates inside agent environments (`CLAUDECODE=1`, `CODEX_ENV`), or set `LOWFAT_ENABLE=1` to force it on any shell:
 
 ```sh
