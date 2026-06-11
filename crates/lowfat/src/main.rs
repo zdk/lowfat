@@ -62,6 +62,8 @@ Examples:
     // ── integrations ──────────────────────────────────────────────
     /// Claude Code PreToolUse hook (reads JSON from stdin)
     Hook,
+    /// Claude Code PostToolUse hook for Read tool (compresses file content)
+    PostRead,
     /// Rewrite a command to its lowfat-wrapped form (used by agent plugins)
     #[command(after_help = "\
 Examples:
@@ -253,6 +255,7 @@ fn main() {
         },
         Some(Commands::Level { value }) => commands::level::run(value.as_deref()),
         Some(Commands::Hook) => commands::hook::run(),
+        Some(Commands::PostRead) => commands::post_read::run(),
         Some(Commands::Rewrite { command }) => commands::rewrite::run(&command),
         Some(Commands::Opencode { action }) => match action {
             OpencodeAction::Install => commands::opencode::install(),

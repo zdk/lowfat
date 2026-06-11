@@ -1,0 +1,433 @@
+//! Language-aware source code compression.
+//!
+//! Uses the data-driven LangSpec to strip comments and collapse function bodies.
+//! lite: block comments + blank normalization
+//! full: all comments (keep doc comments) + blank normalization
+//! ultra: + collapse function bodies to signatures
+
+use std::sync::LazyLock;
+
+use regex::Regex;
+
+use crate::detect::{LangId, LangSpec, ScopeStyle};
+use crate::Level;
+
+pub fn compress(content: &str, lang: &LangId, level: Level) -> String {
+    match level {
+        Level::Lite => {
+            let s = strip_block_comments(content, lang.spec);
+            normalize_blanks(&s)
+        }
+        Level::Full => {
+            let s = strip_block_comments(content, lang.spec);
+            let s = strip_line_comments(&s, lang.spec, true);
+            normalize_blanks(&s)
+        }
+        Level::Ultra => {
+            let s = strip_block_comments(content, lang.spec);
+            let s = strip_line_comments(&s, lang.spec, true);
+            let s = normalize_blanks(&s);
+            collapse_bodies(&s, lang.spec)
+        }
+    }
+}
+
+// ── Comment stripping ───────────────────────────────────────────────
+
+fn strip_block_comments(content: &str, spec: &LangSpec) -> String {
+    let (start, end) = match spec.block_comment {
+        Some(pair) => pair,
+        None => return content.to_string(),
+    };
+
+    let mut result = String::with_capacity(content.len());
+    let mut in_block = false;
+    let mut in_string = false;
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+
+        // Simple string detection: skip lines that are clearly inside a string literal
+        if !in_block {
+            let quote_count = line.matches('"').count();
+            if quote_count % 2 != 0 {
+                in_string = !in_string;
+            }
+            if in_string {
+                result.push_str(line);
+                result.push('\n');
+                continue;
+            }
+        }
+
+        if in_block {
+            if trimmed.contains(end) {
+                in_block = false;
+            }
+            continue;
+        }
+
+        // Keep doc block comments (e.g. /** ... */ or """...""" used as docstrings)
+        if let Some(doc) = spec.doc_comment {
+            if trimmed.starts_with(doc) {
+                result.push_str(line);
+                result.push('\n');
+                continue;
+            }
+        }
+
+        if trimmed.contains(start) && !trimmed.contains(end) {
+            in_block = true;
+            continue;
+        }
+        // Single-line block comment (/* ... */ on one line)
+        if trimmed.contains(start) && trimmed.contains(end) {
+            continue;
+        }
+
+        result.push_str(line);
+        result.push('\n');
+    }
+
+    result
+}
+
+fn strip_line_comments(content: &str, spec: &LangSpec, keep_doc: bool) -> String {
+    let prefix = match spec.line_comment {
+        Some(p) => p,
+        None => return content.to_string(),
+    };
+
+    let mut result = String::with_capacity(content.len());
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+
+        // Keep doc comments
+        if keep_doc {
+            if let Some(doc) = spec.doc_comment {
+                if trimmed.starts_with(doc) {
+                    result.push_str(line);
+                    result.push('\n');
+                    continue;
+                }
+            }
+        }
+
+        // Skip pure comment lines
+        if trimmed.starts_with(prefix) {
+            continue;
+        }
+
+        result.push_str(line);
+        result.push('\n');
+    }
+
+    result
+}
+
+// ── Blank line normalization ────────────────────────────────────────
+
+static MULTI_BLANK: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\n{3,}").unwrap());
+
+fn normalize_blanks(content: &str) -> String {
+    MULTI_BLANK.replace_all(content, "\n\n").to_string()
+}
+
+// ── Body collapsing (ultra level) ───────────────────────────────────
+
+fn collapse_bodies(content: &str, spec: &LangSpec) -> String {
+    match spec.scope {
+        ScopeStyle::Braces => collapse_braces(content, spec),
+        ScopeStyle::Indentation => collapse_indent(content, spec),
+        ScopeStyle::DoEnd => collapse_do_end(content, spec),
+        ScopeStyle::None => content.to_string(),
+    }
+}
+
+/// Collapse brace-delimited bodies (Rust, Go, JS, Java, C).
+/// Keeps signature line + opening brace, replaces body with "...", keeps closing brace.
+fn collapse_braces(content: &str, spec: &LangSpec) -> String {
+    let sig_re = build_signature_regex(spec);
+    let import_re = build_import_regex(spec);
+    let mut result = String::with_capacity(content.len() / 2);
+    let mut depth: i32 = 0;
+    let mut in_body = false;
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+
+        // Always keep imports
+        if import_re.is_match(trimmed) {
+            result.push_str(line);
+            result.push('\n');
+            continue;
+        }
+
+        // Detect signature — start tracking body
+        if !in_body && sig_re.is_match(trimmed) {
+            result.push_str(line);
+            result.push('\n');
+            if trimmed.ends_with('{') {
+                in_body = true;
+                depth = 1;
+            }
+            continue;
+        }
+
+        if !in_body {
+            // Opening brace on next line after signature
+            if trimmed == "{" && result.ends_with('\n') {
+                let prev_line = result.trim_end().lines().last().unwrap_or("");
+                if sig_re.is_match(prev_line.trim()) {
+                    result.push_str(line);
+                    result.push('\n');
+                    in_body = true;
+                    depth = 1;
+                    continue;
+                }
+            }
+            result.push_str(line);
+            result.push('\n');
+            continue;
+        }
+
+        // Inside body — count braces
+        depth += trimmed.matches('{').count() as i32;
+        depth -= trimmed.matches('}').count() as i32;
+
+        if depth <= 0 {
+            result.push_str("    ...\n");
+            result.push_str(line);
+            result.push('\n');
+            in_body = false;
+            depth = 0;
+        }
+    }
+
+    result
+}
+
+/// Collapse indent-based bodies (Python).
+/// Keeps the `def`/`class` line, replaces indented body with "...".
+fn collapse_indent(content: &str, spec: &LangSpec) -> String {
+    let sig_re = build_signature_regex(spec);
+    let import_re = build_import_regex(spec);
+    let mut result = String::with_capacity(content.len() / 2);
+    let mut sig_indent: Option<usize> = None;
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+
+        // Always keep imports
+        if import_re.is_match(trimmed) {
+            sig_indent = None;
+            result.push_str(line);
+            result.push('\n');
+            continue;
+        }
+
+        // Detect signature
+        if sig_re.is_match(trimmed) {
+            let indent = line.len() - line.trim_start().len();
+            sig_indent = Some(indent);
+            result.push_str(line);
+            result.push('\n');
+            // Emit placeholder
+            let pad: String = " ".repeat(indent + 4);
+            result.push_str(&pad);
+            result.push_str("...\n");
+            continue;
+        }
+
+        // If we're inside a body, skip lines more indented than the signature
+        if let Some(base) = sig_indent {
+            if trimmed.is_empty() {
+                continue;
+            }
+            let indent = line.len() - line.trim_start().len();
+            if indent > base {
+                continue; // skip body
+            }
+            // Back to same or lesser indent — body ended
+            sig_indent = None;
+        }
+
+        result.push_str(line);
+        result.push('\n');
+    }
+
+    result
+}
+
+/// Collapse do/end bodies (Elixir, Ruby).
+fn collapse_do_end(content: &str, spec: &LangSpec) -> String {
+    let sig_re = build_signature_regex(spec);
+    let import_re = build_import_regex(spec);
+    let mut result = String::with_capacity(content.len() / 2);
+    let mut do_depth: i32 = 0;
+    let mut in_body = false;
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+
+        if import_re.is_match(trimmed) {
+            result.push_str(line);
+            result.push('\n');
+            continue;
+        }
+
+        if !in_body && sig_re.is_match(trimmed) {
+            result.push_str(line);
+            result.push('\n');
+            if trimmed.ends_with("do") {
+                in_body = true;
+                do_depth = 1;
+            }
+            continue;
+        }
+
+        if !in_body {
+            result.push_str(line);
+            result.push('\n');
+            continue;
+        }
+
+        // Count do/end nesting
+        if trimmed.ends_with("do") || trimmed == "do" {
+            do_depth += 1;
+        }
+        if trimmed == "end" || trimmed.starts_with("end") {
+            do_depth -= 1;
+            if do_depth <= 0 {
+                result.push_str("    ...\n");
+                result.push_str(line);
+                result.push('\n');
+                in_body = false;
+                do_depth = 0;
+            }
+        }
+    }
+
+    result
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────
+
+fn build_signature_regex(spec: &LangSpec) -> Regex {
+    let combined = spec.signature_patterns.join("|");
+    Regex::new(&combined).unwrap_or_else(|_| Regex::new(r"^$").unwrap())
+}
+
+fn build_import_regex(spec: &LangSpec) -> Regex {
+    if spec.import_patterns.is_empty() {
+        return Regex::new(r"^\x00$").unwrap(); // never matches
+    }
+    let combined = spec.import_patterns.join("|");
+    Regex::new(&combined).unwrap_or_else(|_| Regex::new(r"^\x00$").unwrap())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::detect;
+
+    fn rust_lang() -> LangId {
+        LangId { name: "rust", spec: &detect::RUST }
+    }
+
+    fn python_lang() -> LangId {
+        LangId { name: "python", spec: &detect::PYTHON }
+    }
+
+    #[test]
+    fn rust_strip_comments() {
+        let input = "// comment\nfn main() {\n    println!(\"hi\");\n}\n";
+        let result = compress(input, &rust_lang(), Level::Full);
+        assert!(!result.contains("// comment"));
+        assert!(result.contains("fn main()"));
+    }
+
+    #[test]
+    fn rust_keep_doc_comments() {
+        let input = "/// Doc comment\nfn foo() {}\n";
+        let result = compress(input, &rust_lang(), Level::Full);
+        assert!(result.contains("/// Doc comment"));
+    }
+
+    #[test]
+    fn python_collapse_body() {
+        let input = "import os\n\ndef foo():\n    x = 1\n    return x\n\ndef bar():\n    pass\n";
+        let result = compress(input, &python_lang(), Level::Ultra);
+        assert!(result.contains("def foo():"));
+        assert!(result.contains("def bar():"));
+        assert!(!result.contains("x = 1"));
+        assert!(result.contains("..."));
+    }
+
+    #[test]
+    fn rust_collapse_body() {
+        let input = "use std::io;\n\nfn main() {\n    let x = 1;\n    println!(\"{}\", x);\n}\n";
+        let result = compress(input, &rust_lang(), Level::Ultra);
+        assert!(result.contains("use std::io;"));
+        assert!(result.contains("fn main() {"));
+        assert!(result.contains("..."));
+        assert!(!result.contains("let x = 1"));
+    }
+
+    #[test]
+    fn preserves_imports() {
+        let input = "use std::io;\nuse std::fs;\n\n// helper\nfn helper() {\n    todo!()\n}\n";
+        let result = compress(input, &rust_lang(), Level::Ultra);
+        assert!(result.contains("use std::io;"));
+        assert!(result.contains("use std::fs;"));
+    }
+
+    fn count_tokens(s: &str) -> usize {
+        s.split_whitespace().count()
+    }
+
+    #[test]
+    fn meaningful_savings_on_real_code() {
+        let input = r#"
+// Copyright 2024 Foo Corp
+// Licensed under Apache 2.0
+
+use std::collections::HashMap;
+use std::io::{self, Read};
+
+/// A thing that does stuff
+pub struct Foo {
+    bar: String,
+    baz: i32,
+}
+
+impl Foo {
+    /// Create a new Foo
+    pub fn new(bar: String) -> Self {
+        Self {
+            bar,
+            baz: 0,
+        }
+    }
+
+    // Internal helper
+    fn compute(&self) -> i32 {
+        let mut sum = 0;
+        for i in 0..self.baz {
+            sum += i;
+        }
+        sum
+    }
+}
+
+fn main() {
+    let foo = Foo::new("hello".to_string());
+    println!("{}", foo.compute());
+}
+"#;
+        let result = compress(input, &rust_lang(), Level::Ultra);
+        let savings = 100.0 - (count_tokens(&result) as f64 / count_tokens(input) as f64 * 100.0);
+        assert!(savings > 30.0, "Expected >30% savings, got {:.1}%", savings);
+    }
+}

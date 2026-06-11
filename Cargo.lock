@@ -487,12 +487,21 @@ version = "0.6.10"
 dependencies = [
  "anyhow",
  "clap",
+ "lowfat-compress",
  "lowfat-core",
  "lowfat-plugin",
  "lowfat-runner",
  "serde",
  "serde_json",
  "tempfile",
+]
+
+[[package]]
+name = "lowfat-compress"
+version = "0.6.10"
+dependencies = [
+ "regex",
+ "serde_json",
 ]
 
 [[package]]

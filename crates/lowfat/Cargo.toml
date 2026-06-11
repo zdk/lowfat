@@ -12,6 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 lowfat-core = { workspace = true }
+lowfat-compress = { workspace = true }
 lowfat-plugin = { workspace = true }
 lowfat-runner = { workspace = true }
 anyhow = { workspace = true }
