@@ -1,4 +1,4 @@
-//! Data file compression (JSON, YAML, TOML, XML, CSV).
+//! Data file compression (JSON/JSONC only for now).
 //!
 //! lite: passthrough (never corrupt structured data)
 //! full: truncate arrays >10 items
@@ -36,17 +36,18 @@ fn truncate_arrays(content: &str, file_path: &str) -> String {
 fn truncate_value(value: serde_json::Value, max_items: usize) -> serde_json::Value {
     match value {
         serde_json::Value::Array(arr) => {
-            if arr.len() > max_items {
+            let total = arr.len();
+            if total > max_items {
                 let kept: Vec<serde_json::Value> = arr
                     .into_iter()
                     .take(3)
                     .map(|v| truncate_value(v, max_items))
                     .collect();
+                let shown = kept.len();
                 let mut result = kept;
-                let remaining = result.len();
                 result.push(serde_json::Value::String(format!(
                     "... [{} more items]",
-                    max_items + 1 - remaining // approximate
+                    total - shown
                 )));
                 serde_json::Value::Array(result)
             } else {
@@ -113,6 +114,14 @@ mod tests {
         let result = compress(input, "data.json", Level::Full);
         assert!(result.contains("more items"));
         assert!(!result.contains("15"));
+    }
+
+    #[test]
+    fn truncation_count_is_accurate() {
+        let input = r#"{"items": [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]}"#;
+        let result = compress(input, "data.json", Level::Full);
+        // 15 items, 3 shown → "12 more items"
+        assert!(result.contains("12 more items"), "got: {result}");
     }
 
     #[test]

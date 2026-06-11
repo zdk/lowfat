@@ -19,7 +19,7 @@ static HTML_COMMENT: LazyLock<Regex> =
 static INLINE_STYLE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"\s+style="[^"]*""#).unwrap());
 static CLASS_ATTR: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"\s+(class|id|data-\w+)="[^"]*""#).unwrap());
+    LazyLock::new(|| Regex::new(r#"\s+(class|id|data-[\w-]+)="[^"]*""#).unwrap());
 static ALL_TAGS: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"<[^>]+>").unwrap());
 static MULTI_SPACE: LazyLock<Regex> =

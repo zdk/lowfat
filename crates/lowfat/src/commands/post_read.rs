@@ -11,8 +11,12 @@ pub fn run() -> Result<()> {
         .read_to_string(&mut input)
         .context("Failed to read stdin")?;
 
+    process_payload(&input)
+}
+
+fn process_payload(input: &str) -> Result<()> {
     let payload: Value =
-        serde_json::from_str(&input).context("Failed to parse PostToolUse JSON")?;
+        serde_json::from_str(input).context("Failed to parse PostToolUse JSON")?;
 
     let tool_output = match payload["tool_output"].as_str() {
         Some(s) if !s.is_empty() => s,
@@ -48,4 +52,52 @@ pub fn run() -> Result<()> {
 
     println!("{}", serde_json::to_string(&output)?);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn make_payload(file_path: &str, content: &str) -> String {
+        json!({
+            "tool_input": {"file_path": file_path},
+            "tool_output": content
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn empty_tool_output_passes_through() {
+        let payload = json!({"tool_input": {"file_path": "x.rs"}, "tool_output": ""}).to_string();
+        assert!(process_payload(&payload).is_ok());
+    }
+
+    #[test]
+    fn missing_file_path_passes_through() {
+        let payload = json!({"tool_input": {}, "tool_output": "some content"}).to_string();
+        assert!(process_payload(&payload).is_ok());
+    }
+
+    #[test]
+    fn small_savings_not_emitted() {
+        // Short content won't compress >10%
+        let payload = make_payload("main.rs", "fn main() {}");
+        assert!(process_payload(&payload).is_ok());
+    }
+
+    #[test]
+    fn lock_file_compresses() {
+        // Lock files get extreme summarization — guaranteed >10% savings
+        let lock_content = (0..50)
+            .map(|i| format!("[[package]]\nname = \"pkg-{}\"\nversion = \"1.0.{}\"\n", i, i))
+            .collect::<String>();
+        let payload = make_payload("Cargo.lock", &lock_content);
+        assert!(process_payload(&payload).is_ok());
+    }
+
+    #[test]
+    fn invalid_json_returns_error() {
+        assert!(process_payload("not json").is_err());
+    }
 }

@@ -173,7 +173,7 @@ When Claude reads files, `lowfat post-read` compresses the content before it ent
 | **Source code** (Rust, Python, Go, Elixir, JS/TS, Java, Ruby, C/C++, Shell) | Strip comments, normalize blanks; at `ultra`: collapse function bodies to signatures |
 | **Markdown** | Strip badges, HTML comments; truncate code blocks and tables |
 | **HTML** / Vue / Svelte | Strip `<style>`, `<script>`, class attributes; at `ultra`: text extraction only |
-| **JSON / YAML / TOML** | Truncate large arrays, collapse deep nesting |
+| **JSON / JSONC** | Truncate large arrays, collapse deep nesting |
 | **Lock files** (Cargo.lock, package-lock.json, yarn.lock, ...) | Replace with summary: package count + top deps |
 | **Unknown** | Head + tail with line count |
 

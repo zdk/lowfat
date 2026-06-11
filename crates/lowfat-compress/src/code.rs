@@ -77,11 +77,28 @@ fn strip_block_comments(content: &str, spec: &LangSpec) -> String {
         }
 
         if trimmed.contains(start) && !trimmed.contains(end) {
+            // Keep any code before the comment opener
+            if let Some(pos) = line.find(start) {
+                let before = line[..pos].trim_end();
+                if !before.is_empty() {
+                    result.push_str(before);
+                    result.push('\n');
+                }
+            }
             in_block = true;
             continue;
         }
-        // Single-line block comment (/* ... */ on one line)
+        // Single-line block comment (/* ... */ on one line) — strip only the comment
         if trimmed.contains(start) && trimmed.contains(end) {
+            if let (Some(s), Some(e)) = (line.find(start), line.find(end)) {
+                let before = &line[..s];
+                let after = &line[e + end.len()..];
+                let cleaned = format!("{}{}", before.trim_end(), after.trim_start());
+                if !cleaned.trim().is_empty() {
+                    result.push_str(&cleaned);
+                    result.push('\n');
+                }
+            }
             continue;
         }
 
