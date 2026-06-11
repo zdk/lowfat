@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "CLI binary for lowfat"
+description = "Token-aware output and file content filter for LLM environments"
 
 [[bin]]
 name = "lowfat"

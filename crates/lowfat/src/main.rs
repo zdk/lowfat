@@ -5,7 +5,7 @@ use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(name = "lowfat", version)]
-#[command(about = "Token-aware command filter for LLM environments")]
+#[command(about = "Token-aware output and file content filter for LLM environments")]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
