@@ -4,6 +4,7 @@ members = [
     "crates/lowfat-plugin",
     "crates/lowfat-runner",
     "crates/lowfat",
+    "crates/lowfat-mcp",
 ]
 resolver = "2"
 

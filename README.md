@@ -130,6 +130,25 @@ lowfat ls -la
 { "shellCommandPrefix": "eval \"$(lowfat shell-init zsh)\"; " }
 ```
 
+**Claude Desktop (MCP)** — for GUI clients that don't run a shell, the
+`lowfat-mcp` server exposes a `run` tool that executes a command and returns its
+lowfat-condensed output. Build it with `cargo build --release -p lowfat-mcp`,
+then add to `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "lowfat": {
+      "command": "/path/to/lowfat-mcp",
+      "env": { "LOWFAT_BIN": "lowfat" }
+    }
+  }
+}
+```
+
+`LOWFAT_BIN` is optional — set it only if the `lowfat` binary isn't on the
+server's `PATH`. Works with any MCP client, not just Claude Desktop.
+
 ### Usage highlights
 
 ```sh
