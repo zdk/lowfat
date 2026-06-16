@@ -39,13 +39,38 @@ fn strip_block_comments(content: &str, spec: &LangSpec) -> String {
         Some(pair) => pair,
         None => return content.to_string(),
     };
+    // When the doc marker IS the block opener (Python """), docstrings span multiple
+    // lines — keep them verbatim and balanced so later passes aren't confused.
+    let docstring = spec.doc_comment.filter(|d| *d == start);
 
     let mut result = String::with_capacity(content.len());
     let mut in_block = false;
     let mut in_string = false;
+    let mut in_doc = false;
 
     for line in content.lines() {
         let trimmed = line.trim();
+
+        // Keep a multi-line docstring intact until its closing marker.
+        if in_doc {
+            result.push_str(line);
+            result.push('\n');
+            if trimmed.contains(end) {
+                in_doc = false;
+            }
+            continue;
+        }
+        if let Some(q) = docstring {
+            if trimmed.starts_with(q) {
+                result.push_str(line);
+                result.push('\n');
+                // Opener with no closer on the same line → swallow until it closes.
+                if !trimmed[q.len()..].contains(q) {
+                    in_doc = true;
+                }
+                continue;
+            }
+        }
 
         // Simple string detection: skip lines that are clearly inside a string literal
         if !in_block {
@@ -232,9 +257,19 @@ fn collapse_indent(content: &str, spec: &LangSpec) -> String {
     let import_re = build_import_regex(spec);
     let mut result = String::with_capacity(content.len() / 2);
     let mut sig_indent: Option<usize> = None;
+    let mut in_docstring: Option<&'static str> = None;
 
     for line in content.lines() {
         let trimmed = line.trim();
+
+        // Swallow a docstring we're collapsing — its text may be dedented to column 0,
+        // which would otherwise look like the body ending.
+        if let Some(q) = in_docstring {
+            if trimmed.contains(q) {
+                in_docstring = None;
+            }
+            continue;
+        }
 
         // Always keep imports
         if import_re.is_match(trimmed) {
@@ -264,6 +299,11 @@ fn collapse_indent(content: &str, spec: &LangSpec) -> String {
             }
             let indent = line.len() - line.trim_start().len();
             if indent > base {
+                // A docstring can dedent its text below `base`; track it so those
+                // lines stay skipped instead of being mistaken for the body's end.
+                if let Some(q) = opens_docstring(trimmed) {
+                    in_docstring = Some(q);
+                }
                 continue; // skip body
             }
             // Back to same or lesser indent — body ended
@@ -331,6 +371,17 @@ fn collapse_do_end(content: &str, spec: &LangSpec) -> String {
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
+/// If `trimmed` opens a Python docstring (`"""` / `'''`) that isn't closed on the
+/// same line, return its quote style so the caller can skip to the close.
+fn opens_docstring(trimmed: &str) -> Option<&'static str> {
+    for q in ["\"\"\"", "'''"] {
+        if let Some(rest) = trimmed.strip_prefix(q) {
+            return if rest.contains(q) { None } else { Some(q) };
+        }
+    }
+    None
+}
+
 fn build_signature_regex(spec: &LangSpec) -> Regex {
     let combined = spec.signature_patterns.join("|");
     Regex::new(&combined).unwrap_or_else(|_| Regex::new(r"^$").unwrap())
@@ -380,6 +431,17 @@ mod tests {
         assert!(result.contains("def bar():"));
         assert!(!result.contains("x = 1"));
         assert!(result.contains("..."));
+    }
+
+    #[test]
+    fn python_collapse_unindented_docstring() {
+        // `"""\`-style docstring whose text sits at column 0 must not leak the body.
+        let input = "def toposort(data):\n    \"\"\"\\\nDependencies are expressed as a dict.\nitems in the preceeding sets.\"\"\"\n\n    if len(data) == 0:\n        return\n    return data\n\ndef other():\n    return 1\n";
+        let result = compress(input, &python_lang(), Level::Ultra);
+        assert!(result.contains("def toposort(data):"), "got:\n{result}");
+        assert!(result.contains("def other():"), "got:\n{result}");
+        assert!(!result.contains("Dependencies are expressed"), "docstring leaked:\n{result}");
+        assert!(!result.contains("if len(data)"), "body leaked:\n{result}");
     }
 
     #[test]
