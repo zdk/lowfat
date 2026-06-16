@@ -40,6 +40,13 @@ pub fn compress(content: &str, file_path: &str, level: Level) -> String {
         ContentType::Unknown => text::compress(content, level),
     };
 
+    // Never hand back nothing for a file that had content: an all-comment file,
+    // a refs-only .d.ts, or heading-less markdown at ultra can strip to empty —
+    // show it verbatim instead of deleting it from context.
+    if compressed.trim().is_empty() {
+        return content.to_string();
+    }
+
     // Only return compressed if we saved >10%
     if compressed.len() < content.len() * 9 / 10 {
         compressed
@@ -61,5 +68,12 @@ mod tests {
     fn passthrough_when_no_savings() {
         let content = "fn main() {}";
         assert_eq!(compress(content, "main.rs", Level::Full), content);
+    }
+
+    #[test]
+    fn all_comment_file_not_emptied() {
+        // A file that is 100% comments strips to empty — must pass through verbatim.
+        let content = "# license line 1\n# license line 2\n# license line 3\n";
+        assert_eq!(compress(content, "__init__.py", Level::Full), content);
     }
 }

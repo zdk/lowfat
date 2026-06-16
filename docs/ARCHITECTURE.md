@@ -51,7 +51,7 @@ based on file type (code, markdown, HTML, data, lock files).
    │  Claude Code reads a file                        │
    │  (PostToolUse hook fires)                        │
    └────────────────────┬─────────────────────────────┘
-                        │ stdin: JSON {tool_input, tool_output}
+                        │ stdin: JSON {tool_input, tool_response}
                         ▼
    ┌───────────────────────────────────────────────────┐
    │           lowfat post-read                       │

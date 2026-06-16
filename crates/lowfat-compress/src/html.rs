@@ -20,8 +20,9 @@ static INLINE_STYLE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"\s+style="[^"]*""#).unwrap());
 static CLASS_ATTR: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"\s+(class|id|data-[\w-]+)="[^"]*""#).unwrap());
+// Only match real tags (start with letter/!/?), so prose like "a < b and c > d" survives.
 static ALL_TAGS: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"<[^>]+>").unwrap());
+    LazyLock::new(|| Regex::new(r"</?[a-zA-Z!?][^>]*>").unwrap());
 static MULTI_SPACE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"[ \t]{2,}").unwrap());
 static MULTI_BLANK: LazyLock<Regex> =
@@ -84,6 +85,14 @@ mod tests {
         assert!(!result.contains("container"));
         assert!(!result.contains("data-testid"));
         assert!(result.contains("Text"));
+    }
+
+    #[test]
+    fn ultra_keeps_comparison_text() {
+        // Regex must not eat "< 10 and a >" as if it were a tag.
+        let input = "<p>5 < 10 and a > b</p>";
+        let result = compress(input, Level::Ultra);
+        assert!(result.contains("5 < 10 and a > b"), "got: {result}");
     }
 
     #[test]
