@@ -436,7 +436,7 @@ mod tests {
     #[test]
     fn python_collapse_unindented_docstring() {
         // `"""\`-style docstring whose text sits at column 0 must not leak the body.
-        let input = "def toposort(data):\n    \"\"\"\\\nDependencies are expressed as a dict.\nitems in the preceeding sets.\"\"\"\n\n    if len(data) == 0:\n        return\n    return data\n\ndef other():\n    return 1\n";
+        let input = "def toposort(data):\n    \"\"\"\\\nDependencies are expressed as a dict.\nitems in the preceding sets.\"\"\"\n\n    if len(data) == 0:\n        return\n    return data\n\ndef other():\n    return 1\n";
         let result = compress(input, &python_lang(), Level::Ultra);
         assert!(result.contains("def toposort(data):"), "got:\n{result}");
         assert!(result.contains("def other():"), "got:\n{result}");
