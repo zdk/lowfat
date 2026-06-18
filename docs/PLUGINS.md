@@ -46,7 +46,7 @@ subcommands = ["get", "describe", "logs", "apply"]
 
 # The lf-filter DSL
 
-**lf-filter** is lowfat's declarative plugin DSL. A `.lf` file is a sequence of `define` blocks and `rule` blocks; the runner picks the first rule whose selector matches `(subcommand, level)` and runs its ops top-to-bottom.
+**lf-filter** is lowfat's declarative plugin DSL. A `.lf` file is a sequence of `include` directives, `define` blocks, and `rule` blocks; the runner picks the first rule whose selector matches `(subcommand, level)` and runs its ops top-to-bottom.
 
 ## Selectors
 
