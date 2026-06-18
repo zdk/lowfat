@@ -1,0 +1,12 @@
+#!/usr/bin/env lowfat-filter
+# pytest.lf — compacts `pytest` output. Doubles as a macro library: other
+# filters can `include` it to reuse `compact-pytest` (its rules are ignored
+# on include).
+
+# Keep the test verdicts + section banners, drop the noise, then cap.
+define compact-pytest:
+    keep /PASSED|FAILED|ERROR|=====|passed|failed|error/
+    head 40
+
+pytest:
+    compact-pytest

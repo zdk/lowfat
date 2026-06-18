@@ -160,6 +160,8 @@ include lib/pytest.lf       # path is relative to THIS file
   hard error (rename one, or override it locally). Cycles are rejected.
 - Only files loaded from disk can `include` — embedded/bundled filters can't.
 
+Runnable example: [`examples/include`](../examples/include).
+
 ## Inline ops on a rule header
 
 ```awk

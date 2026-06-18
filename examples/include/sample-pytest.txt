@@ -1,0 +1,18 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.0, pytest-8.0.0, pluggy-1.4.0
+rootdir: /home/user/project
+collected 3 items
+
+tests/test_foo.py::test_a PASSED                                         [ 33%]
+tests/test_foo.py::test_b FAILED                                         [ 66%]
+tests/test_foo.py::test_c PASSED                                         [100%]
+
+=================================== FAILURES ===================================
+___________________________________ test_b ____________________________________
+
+    def test_b():
+>       assert add(2, 2) == 5
+E       assert 4 == 5
+
+tests/test_foo.py:9: AssertionError
+=========================== 2 passed, 1 failed in 0.51s ========================

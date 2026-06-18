@@ -1,0 +1,8 @@
+#!/usr/bin/env lowfat-filter
+# uv-pytest.lf — wraps `uv run pytest`. The output is pytest's, so reuse
+# pytest's compaction instead of copying it. Path is relative to this file.
+include lib/pytest.lf
+
+# `uv run pytest` → subcommand is `run`.
+run:
+    compact-pytest

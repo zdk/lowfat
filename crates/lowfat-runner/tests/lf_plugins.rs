@@ -244,3 +244,36 @@ fn npm_compact_parity() {
 fn go_compact_parity() {
     check_plugin(&fixtures_dir().join("go/go-compact"), 10.0);
 }
+
+/// End-to-end proof for `include`: the `examples/include` wrapper imports a
+/// macro from another file and that macro actually runs on real input. Uses
+/// `lf::load` (the include-aware entry point), so a regression here means
+/// the example in the docs stopped working.
+#[test]
+fn include_example_resolves_and_runs() {
+    let dir = repo_root().join("examples/include");
+    let rs = lf::load(&dir.join("uv-pytest.lf")).expect("load wrapper with include");
+
+    // The imported macro is in scope despite living in lib/pytest.lf.
+    assert!(rs.find_define("compact-pytest").is_some());
+
+    let raw = std::fs::read_to_string(dir.join("sample-pytest.txt")).unwrap();
+    let args: Vec<String> = vec![];
+    let ctx = ExecCtx {
+        sub: "run", // `uv run pytest`
+        level: Level::Full,
+        exit_code: 0,
+        args: &args,
+    };
+    let out = lf::execute(&rs, &ctx, &raw).expect("execute wrapper");
+
+    // Verdicts + summary kept by the imported macro...
+    assert!(out.contains("test_a PASSED"), "kept verdicts:\n{out}");
+    assert!(out.contains("2 passed, 1 failed"), "kept summary:\n{out}");
+    // ...noise dropped, so it's genuinely compacted.
+    assert!(!out.contains("platform linux"), "dropped noise:\n{out}");
+    assert!(
+        out.lines().count() < raw.lines().count(),
+        "output not compacted"
+    );
+}
