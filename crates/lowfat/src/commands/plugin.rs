@@ -51,7 +51,11 @@ pub fn collect_bench_rows(plugin: &DiscoveredPlugin) -> Result<Vec<BenchRow>> {
 
     for entry in &entries {
         let path = entry.path();
-        let sample_name = path.file_stem().unwrap_or_default().to_string_lossy().to_string();
+        let sample_name = path
+            .file_stem()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
 
         // <command>-<subcommand>-<level>; shorter forms default to level=full.
         let parts: Vec<&str> = sample_name.split('-').collect();
@@ -112,11 +116,13 @@ pub fn list() -> Result<()> {
         let version = m.plugin.version.as_deref().unwrap_or("?");
         let cmds = m.plugin.commands.join(", ");
         let category = &plugin.category;
-        let tag = if plugin.is_embedded() { " (bundled)" } else { "" };
+        let tag = if plugin.is_embedded() {
+            " (bundled)"
+        } else {
+            ""
+        };
 
-        println!(
-            "  {category}/{name} v{version}{tag} — commands: [{cmds}]"
-        );
+        println!("  {category}/{name} v{version}{tag} — commands: [{cmds}]");
     }
 
     Ok(())
@@ -147,35 +153,26 @@ pub fn doctor() -> Result<()> {
             needs_uv = true;
         }
 
-        // Resolve the .lf source — either from the embedded binary blob or
-        // by reading the entry file from disk.
-        let (source, is_lf) = match &plugin.source {
-            lowfat_plugin::discovery::PluginSource::Embedded { filter_lf } => {
-                (filter_lf.to_string(), true)
-            }
+        // Parse the .lf into a RuleSet — embedded blobs parse as a string;
+        // disk files go through `lf::load` so `include` directives resolve.
+        let parsed = match &plugin.source {
+            lowfat_plugin::discovery::PluginSource::Embedded { filter_lf } => lf::parse(filter_lf),
             lowfat_plugin::discovery::PluginSource::Disk { base_dir } => {
                 let entry_path = base_dir.join(plugin.manifest.runtime.resolve_entry(base_dir));
                 if !entry_path.exists() {
                     println!("  {name:<24} x entry not found: {}", entry_path.display());
                     continue;
                 }
-                let is_lf = entry_path.extension().map(|e| e == "lf").unwrap_or(false);
-                if !is_lf {
+                if entry_path.extension().map(|e| e == "lf").unwrap_or(false) {
+                    lf::load(&entry_path)
+                } else {
                     println!("  {name:<24} ok (shell)");
                     ready += 1;
                     continue;
                 }
-                match std::fs::read_to_string(&entry_path) {
-                    Ok(s) => (s, true),
-                    Err(e) => {
-                        println!("  {name:<24} x cannot read: {e}");
-                        continue;
-                    }
-                }
             }
         };
-        let _ = is_lf;
-        let rs = match lf::parse(&source) {
+        let rs = match parsed {
             Ok(r) => r,
             Err(e) => {
                 println!("  {name:<24} x parse error: {e:#}");
@@ -203,10 +200,7 @@ pub fn doctor() -> Result<()> {
             match prewarm_uv(body) {
                 Ok(_) => prewarmed += 1,
                 Err(e) => {
-                    println!(
-                        "  {name:<24} x PEP 723 body #{}: {e:#}",
-                        i + 1
-                    );
+                    println!("  {name:<24} x PEP 723 body #{}: {e:#}", i + 1);
                     all_ok = false;
                     break;
                 }
@@ -319,21 +313,30 @@ pub fn info(name: &str) -> Result<()> {
     let config = RunfConfig::resolve();
     let plugins = discover_plugins(&config.plugin_dir);
 
-    let plugin = plugins
-        .iter()
-        .find(|p| p.manifest.plugin.name == name);
+    let plugin = plugins.iter().find(|p| p.manifest.plugin.name == name);
 
     match plugin {
         Some(p) => {
             let m = &p.manifest;
             println!("Plugin: {}", m.plugin.name);
-            println!("  Version:     {}", m.plugin.version.as_deref().unwrap_or("?"));
-            println!("  Description: {}", m.plugin.description.as_deref().unwrap_or("-"));
-            println!("  Author:      {}", m.plugin.author.as_deref().unwrap_or("-"));
+            println!(
+                "  Version:     {}",
+                m.plugin.version.as_deref().unwrap_or("?")
+            );
+            println!(
+                "  Description: {}",
+                m.plugin.description.as_deref().unwrap_or("-")
+            );
+            println!(
+                "  Author:      {}",
+                m.plugin.author.as_deref().unwrap_or("-")
+            );
             println!("  Category:    {}", p.category);
             let base_dir = p.base_dir();
             let entry = match &p.source {
-                lowfat_plugin::discovery::PluginSource::Embedded { .. } => "filter.lf (embedded)".to_string(),
+                lowfat_plugin::discovery::PluginSource::Embedded { .. } => {
+                    "filter.lf (embedded)".to_string()
+                }
                 lowfat_plugin::discovery::PluginSource::Disk { base_dir } => {
                     m.runtime.resolve_entry(base_dir)
                 }
@@ -435,9 +438,7 @@ pub fn bench(name: &str) -> Result<()> {
     let config = RunfConfig::resolve();
     let plugins = discover_plugins(&config.plugin_dir);
 
-    let plugin = plugins
-        .iter()
-        .find(|p| p.manifest.plugin.name == name);
+    let plugin = plugins.iter().find(|p| p.manifest.plugin.name == name);
 
     let plugin = match plugin {
         Some(p) => p,
@@ -533,6 +534,9 @@ subcommands = ["run"]
             row.filtered_tokens > 0,
             "filter.lf must run through LfFilter (in-process), not sh — got 0 tokens"
         );
-        assert!(row.filtered_tokens < row.raw_tokens, "head 2 trims the 5-line sample");
+        assert!(
+            row.filtered_tokens < row.raw_tokens,
+            "head 2 trims the 5-line sample"
+        );
     }
 }

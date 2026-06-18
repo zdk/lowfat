@@ -15,10 +15,7 @@ use std::path::PathBuf;
 // ---------------------------------------------------------------------------
 
 fn temp_plugin(name: &str, script: &str) -> (ProcessFilter, PathBuf) {
-    let dir = std::env::temp_dir().join(format!(
-        "lowfat-e2e-{name}-{}",
-        std::process::id()
-    ));
+    let dir = std::env::temp_dir().join(format!("lowfat-e2e-{name}-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("filter.sh");
     let mut f = std::fs::File::create(&path).unwrap();
@@ -185,11 +182,20 @@ fn kubectl_get_pods_ultra_filters_running() {
     // Header should be present
     assert!(result.text.contains("NAME"), "header missing");
     // Non-Running pods should be present
-    assert!(result.text.contains("CrashLoopBackOff"), "CrashLoop pod missing");
+    assert!(
+        result.text.contains("CrashLoopBackOff"),
+        "CrashLoop pod missing"
+    );
     assert!(result.text.contains("Pending"), "Pending pod missing");
     // Running pods should be filtered out
-    assert!(!result.text.contains("nginx-abc123"), "Running pod should be filtered");
-    assert!(!result.text.contains("redis-def456"), "Running pod should be filtered");
+    assert!(
+        !result.text.contains("nginx-abc123"),
+        "Running pod should be filtered"
+    );
+    assert!(
+        !result.text.contains("redis-def456"),
+        "Running pod should be filtered"
+    );
 }
 
 #[test]
@@ -206,8 +212,14 @@ fn kubectl_get_pods_full_keeps_all() {
     let result = filter.filter(&input).unwrap();
 
     // Full level keeps everything
-    assert!(result.text.contains("nginx-abc123"), "all pods should be present at full");
-    assert!(result.text.contains("CrashLoopBackOff"), "all pods should be present at full");
+    assert!(
+        result.text.contains("nginx-abc123"),
+        "all pods should be present at full"
+    );
+    assert!(
+        result.text.contains("CrashLoopBackOff"),
+        "all pods should be present at full"
+    );
 }
 
 #[test]
@@ -228,8 +240,14 @@ fn kubectl_get_events_ultra_warnings_only() {
     assert!(result.text.contains("BackOff"), "Warning event missing");
     assert!(result.text.contains("Failed"), "Warning event missing");
     // Normal events should be filtered
-    assert!(!result.text.contains("Scheduled"), "Normal event should be filtered");
-    assert!(!result.text.contains("Pulled"), "Normal event should be filtered");
+    assert!(
+        !result.text.contains("Scheduled"),
+        "Normal event should be filtered"
+    );
+    assert!(
+        !result.text.contains("Pulled"),
+        "Normal event should be filtered"
+    );
 }
 
 #[test]
@@ -289,9 +307,18 @@ fn kubectl_get_pods_with_namespace_flag() {
     let result = filter.filter(&input).unwrap();
 
     // Should correctly parse "pods" as resource despite -n flag
-    assert!(result.text.contains("NAME"), "header missing — resource type not parsed correctly");
-    assert!(result.text.contains("CrashLoopBackOff"), "should use pods-specific filter");
-    assert!(!result.text.contains("nginx-abc123"), "Running pods should be filtered in ultra");
+    assert!(
+        result.text.contains("NAME"),
+        "header missing — resource type not parsed correctly"
+    );
+    assert!(
+        result.text.contains("CrashLoopBackOff"),
+        "should use pods-specific filter"
+    );
+    assert!(
+        !result.text.contains("nginx-abc123"),
+        "Running pods should be filtered in ultra"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -379,9 +406,18 @@ fn cargo_build_ultra_shows_warnings_only() {
     );
     let result = filter.filter(&input).unwrap();
 
-    assert!(result.text.contains("warning: unused variable"), "warning line missing");
-    assert!(!result.text.contains("Compiling serde"), "Compiling noise should be stripped");
-    assert!(!result.text.contains("Finished"), "Finished line should be stripped");
+    assert!(
+        result.text.contains("warning: unused variable"),
+        "warning line missing"
+    );
+    assert!(
+        !result.text.contains("Compiling serde"),
+        "Compiling noise should be stripped"
+    );
+    assert!(
+        !result.text.contains("Finished"),
+        "Finished line should be stripped"
+    );
 }
 
 #[test]
@@ -390,7 +426,14 @@ fn cargo_build_ultra_clean_shows_ok() {
    Compiling myapp v0.1.0
     Finished `dev` profile in 2.0s";
     let (filter, _dir) = temp_plugin("cargo-clean", CARGO_SCRIPT);
-    let input = make_input(clean_output, "cargo", "build", vec!["build"], Level::Ultra, 0);
+    let input = make_input(
+        clean_output,
+        "cargo",
+        "build",
+        vec!["build"],
+        Level::Ultra,
+        0,
+    );
     let result = filter.filter(&input).unwrap();
 
     assert!(
@@ -413,9 +456,18 @@ fn cargo_build_full_strips_compiling_noise() {
     );
     let result = filter.filter(&input).unwrap();
 
-    assert!(!result.text.contains("Compiling serde"), "Compiling noise should be stripped");
-    assert!(result.text.contains("warning: unused variable"), "warnings should remain");
-    assert!(result.text.contains("Finished"), "Finished line should remain");
+    assert!(
+        !result.text.contains("Compiling serde"),
+        "Compiling noise should be stripped"
+    );
+    assert!(
+        result.text.contains("warning: unused variable"),
+        "warnings should remain"
+    );
+    assert!(
+        result.text.contains("Finished"),
+        "Finished line should remain"
+    );
 }
 
 #[test]
@@ -431,10 +483,19 @@ fn cargo_test_ultra_shows_failures_only() {
     );
     let result = filter.filter(&input).unwrap();
 
-    assert!(result.text.contains("test result: FAILED"), "result summary missing");
-    assert!(result.text.contains("overflow_check"), "failed test name missing");
+    assert!(
+        result.text.contains("test result: FAILED"),
+        "result summary missing"
+    );
+    assert!(
+        result.text.contains("overflow_check"),
+        "failed test name missing"
+    );
     // Individual ok tests should not appear
-    assert!(!result.text.contains("basic_add"), "passing tests should be stripped");
+    assert!(
+        !result.text.contains("basic_add"),
+        "passing tests should be stripped"
+    );
 }
 
 #[test]
@@ -451,10 +512,16 @@ fn cargo_test_full_strips_ok_tests() {
     let result = filter.filter(&input).unwrap();
 
     // Compiling noise stripped
-    assert!(!result.text.contains("Compiling myapp"), "Compiling should be stripped");
+    assert!(
+        !result.text.contains("Compiling myapp"),
+        "Compiling should be stripped"
+    );
     // Failures and result should remain
     assert!(result.text.contains("FAILED"), "FAILED should remain");
-    assert!(result.text.contains("test result:"), "result summary should remain");
+    assert!(
+        result.text.contains("test result:"),
+        "result summary should remain"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -482,7 +549,11 @@ fn pipeline_with_shell_plugin_and_builtins() {
     let result = execute_pipeline(&pipeline, raw, &input, &plugin_map).unwrap();
 
     // strip-ansi removes ANSI, then upper-compact uppercases
-    assert!(result.contains("HELLO WORLD"), "should be uppercased: {}", result);
+    assert!(
+        result.contains("HELLO WORLD"),
+        "should be uppercased: {}",
+        result
+    );
     assert!(!result.contains("\x1b["), "ANSI should be stripped");
 }
 
@@ -535,13 +606,22 @@ fi
     // Success case
     let input = make_input("all good", "test", "", vec![], Level::Full, 0);
     let result = filter.filter(&input).unwrap();
-    assert!(!result.text.contains("ERROR"), "should not show error on exit 0");
+    assert!(
+        !result.text.contains("ERROR"),
+        "should not show error on exit 0"
+    );
 
     // Failure case
     let input = make_input("something broke", "test", "", vec![], Level::Full, 1);
     let result = filter.filter(&input).unwrap();
-    assert!(result.text.contains("ERROR (exit 1)"), "should show error on exit 1");
-    assert!(result.text.contains("something broke"), "should preserve raw on error");
+    assert!(
+        result.text.contains("ERROR (exit 1)"),
+        "should show error on exit 1"
+    );
+    assert!(
+        result.text.contains("something broke"),
+        "should preserve raw on error"
+    );
 }
 
 // ---------------------------------------------------------------------------

@@ -7,8 +7,10 @@
 //! source line numbers.
 
 use crate::level::Level;
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{anyhow, bail, Context, Result};
 use regex::Regex;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 // ──────────────────────────────────────────────────────────────────
 // AST
@@ -204,13 +206,28 @@ const OP_KEYWORDS: &[&str] = &[
     "match",
 ];
 
+/// Parse a `.lf` source string with no filesystem context. `include`
+/// directives are rejected here — they need a base directory to resolve
+/// against, so use [`load`] for file-backed filters. Used by tests and
+/// embedded (in-`.rodata`) filters, which have no on-disk location.
 pub fn parse(input: &str) -> Result<RuleSet> {
     let lines = split_lines(input);
-    let macro_names = collect_macro_names(&lines);
+    parse_lines(&lines, &[], false)
+}
+
+/// Parse pre-split lines. `inherited` are macro names pulled in from
+/// `include`d files (empty for a standalone parse); they're added to the
+/// macro vocabulary so calls to imported macros parse as calls, not ops.
+/// `includes_resolved` tells the parser the loader already handled the
+/// `include` lines — true from [`load`], false from [`parse`].
+fn parse_lines(lines: &[Line], inherited: &[String], includes_resolved: bool) -> Result<RuleSet> {
+    let mut macro_names = collect_macro_names(lines);
+    macro_names.extend(inherited.iter().cloned());
     let mut p = Parser {
-        lines: &lines,
+        lines,
         pos: 0,
         macro_names,
+        includes_resolved,
     };
     p.parse_ruleset()
 }
@@ -234,10 +251,181 @@ fn collect_macro_names(lines: &[Line]) -> Vec<String> {
     names
 }
 
+// ── include resolution ───────────────────────────────────────────
+//
+// `include` is a module layer that sits *around* the parser: the loader
+// reads the graph, merges every file's `define`s, and hands the parser a
+// complete macro vocabulary. Includes never reach the `Op`/`RuleSet` AST —
+// the executor, explain trace and PEP-723 scan stay oblivious.
+
+/// A macro paired with the file that actually `define`d it. The origin lets
+/// us tell a real name collision (two different files) from a diamond import
+/// (the same macro reached by two include paths).
+#[derive(Clone)]
+struct OwnedDefine {
+    def: Define,
+    origin: PathBuf,
+}
+
+/// `include foo.lf` line on the include scan.
+struct IncludeDirective {
+    path: String,
+    line_no: usize,
+}
+
+fn is_include_line(text: &str) -> bool {
+    text == "include" || text.starts_with("include ")
+}
+
+/// Pull `include` paths off the raw lines without a full parse — runs before
+/// op bodies are parsed, since the parser needs imported macro names first.
+fn collect_includes(lines: &[Line]) -> Result<Vec<IncludeDirective>> {
+    let mut out = Vec::new();
+    for l in lines {
+        if l.is_meta || l.indent != 0 || !is_include_line(&l.text) {
+            continue;
+        }
+        let rest = l.text["include".len()..].trim();
+        let path = strip_quotes(rest);
+        if path.is_empty() {
+            bail!("line {}: `include` needs a path", l.line_no);
+        }
+        out.push(IncludeDirective {
+            path: path.to_string(),
+            line_no: l.line_no,
+        });
+    }
+    Ok(out)
+}
+
+/// Strip a single layer of matching `"..."` quotes; otherwise return as-is.
+fn strip_quotes(s: &str) -> &str {
+    let b = s.as_bytes();
+    if b.len() >= 2 && b[0] == b'"' && b[b.len() - 1] == b'"' {
+        &s[1..s.len() - 1]
+    } else {
+        s
+    }
+}
+
+/// Load a `.lf` file and resolve its `include` graph into one [`RuleSet`].
+/// `define`s are merged from every included file; `rules` come from the root
+/// file only (an included file's rules are ignored — it may double as a
+/// runnable filter). Paths resolve relative to the including file.
+pub fn load(path: &Path) -> Result<RuleSet> {
+    let mut loader = Loader::default();
+    let (defs, rules) = loader.load_file(path, true)?;
+    Ok(RuleSet {
+        defines: defs.into_iter().map(|d| d.def).collect(),
+        rules,
+    })
+}
+
+#[derive(Default)]
+struct Loader {
+    /// Canonical path → its exported defines. Caches diamond imports so a
+    /// shared file is read and parsed once.
+    cache: HashMap<PathBuf, Vec<OwnedDefine>>,
+    /// Canonical paths on the current load chain, for cycle detection.
+    loading: Vec<PathBuf>,
+}
+
+impl Loader {
+    /// Returns `(exported defines, rules)`. Rules are empty unless `is_root`.
+    fn load_file(&mut self, path: &Path, is_root: bool) -> Result<(Vec<OwnedDefine>, Vec<Rule>)> {
+        // Canonicalize for cycle/cache keys; fall back to the given path so a
+        // missing file fails later with a clear "reading X" error.
+        let canon = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+
+        if let Some(cached) = self.cache.get(&canon) {
+            return Ok((cached.clone(), Vec::new()));
+        }
+        if self.loading.contains(&canon) {
+            let chain = self
+                .loading
+                .iter()
+                .map(|p| p.display().to_string())
+                .collect::<Vec<_>>()
+                .join(" -> ");
+            bail!("include cycle: {} -> {}", chain, canon.display());
+        }
+        self.loading.push(canon.clone());
+
+        let result = self.load_file_inner(path, &canon, is_root);
+        self.loading.pop();
+
+        let (exported, rules) = result?;
+        self.cache.insert(canon, exported.clone());
+        Ok((exported, rules))
+    }
+
+    fn load_file_inner(
+        &mut self,
+        path: &Path,
+        canon: &Path,
+        is_root: bool,
+    ) -> Result<(Vec<OwnedDefine>, Vec<Rule>)> {
+        let src =
+            std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+        let lines = split_lines(&src);
+        let base = path.parent().unwrap_or_else(|| Path::new("."));
+
+        // Resolve includes first to know the full macro vocabulary.
+        let mut inherited: Vec<OwnedDefine> = Vec::new();
+        for inc in collect_includes(&lines)? {
+            let inc_path = base.join(&inc.path);
+            let (defs, _) = self.load_file(&inc_path, false).with_context(|| {
+                format!("{}:{}: include {}", path.display(), inc.line_no, inc.path)
+            })?;
+            for d in defs {
+                merge_inherited(&mut inherited, d)?;
+            }
+        }
+
+        let names: Vec<String> = inherited.iter().map(|d| d.def.name.clone()).collect();
+        let rs = parse_lines(&lines, &names, true)
+            .with_context(|| format!("parsing {}", path.display()))?;
+
+        // Local defines override inherited ones of the same name.
+        let mut exported = inherited;
+        for def in rs.defines {
+            exported.retain(|d| d.def.name != def.name);
+            exported.push(OwnedDefine {
+                def,
+                origin: canon.to_path_buf(),
+            });
+        }
+
+        Ok((exported, if is_root { rs.rules } else { Vec::new() }))
+    }
+}
+
+/// Accumulate an inherited macro. Same name from the *same* origin is a
+/// diamond import → keep one. Same name from a *different* origin is a real
+/// collision the user must resolve.
+fn merge_inherited(acc: &mut Vec<OwnedDefine>, incoming: OwnedDefine) -> Result<()> {
+    if let Some(existing) = acc.iter().find(|d| d.def.name == incoming.def.name) {
+        if existing.origin == incoming.origin {
+            return Ok(()); // same macro, two paths
+        }
+        bail!(
+            "macro `{}` imported from both {} and {}; rename one or override it locally",
+            incoming.def.name,
+            existing.origin.display(),
+            incoming.origin.display()
+        );
+    }
+    acc.push(incoming);
+    Ok(())
+}
+
 struct Parser<'a> {
     lines: &'a [Line],
     pos: usize,
     macro_names: Vec<String>,
+    /// True when an `include` graph was already resolved by [`load`], so the
+    /// structural parser skips `include` lines instead of erroring on them.
+    includes_resolved: bool,
 }
 
 impl<'a> Parser<'a> {
@@ -273,6 +461,16 @@ impl<'a> Parser<'a> {
         while let Some(line) = self.peek_significant() {
             if line.indent != 0 {
                 bail!("line {}: unexpected indent at top level", line.line_no);
+            }
+            if is_include_line(&line.text) {
+                if self.includes_resolved {
+                    self.advance(); // already merged by the loader
+                    continue;
+                }
+                bail!(
+                    "line {}: `include` needs a file to resolve against; load the .lf from disk",
+                    line.line_no
+                );
             }
             if line.text.starts_with("define ") {
                 let d = self.parse_define()?;
@@ -325,8 +523,7 @@ impl<'a> Parser<'a> {
             .ok_or_else(|| anyhow!("line {}: missing `:` in rule header", line_no))?;
         let selector = &header.text[..colon_pos];
         let after = &header.text[colon_pos + 1..];
-        let (sub, level) =
-            parse_selector(selector).with_context(|| format!("line {line_no}"))?;
+        let (sub, level) = parse_selector(selector).with_context(|| format!("line {line_no}"))?;
 
         let mut ops = Vec::new();
         let inline = after.trim();
@@ -461,12 +658,7 @@ impl<'a> Parser<'a> {
     /// Body of one arm — used by `if`/`elif`/`else` and by `match` arms.
     /// Inline ops after `:` force a pipeline body; otherwise the body may
     /// be a nested cascade (`if` or `match`) or a plain indented pipeline.
-    fn parse_arm_body(
-        &mut self,
-        inline: &str,
-        indent: usize,
-        line_no: usize,
-    ) -> Result<Vec<Op>> {
+    fn parse_arm_body(&mut self, inline: &str, indent: usize, line_no: usize) -> Result<Vec<Op>> {
         let mut ops = Vec::new();
         if !inline.is_empty() {
             ops.extend(self.parse_inline_ops(inline, line_no)?);
@@ -612,18 +804,12 @@ impl<'a> Parser<'a> {
             }
             // `raw` is canonical; `passthrough` is a v0.5.0 legacy alias.
             "raw" | "passthrough" => Ok(Op::Raw),
-            "shell:" => Ok(Op::Shell(self.parse_block_body(
-                text,
-                head,
-                indent,
-                line_no,
-            )?)),
-            "python:" => Ok(Op::Python(self.parse_block_body(
-                text,
-                head,
-                indent,
-                line_no,
-            )?)),
+            "shell:" => Ok(Op::Shell(
+                self.parse_block_body(text, head, indent, line_no)?,
+            )),
+            "python:" => Ok(Op::Python(
+                self.parse_block_body(text, head, indent, line_no)?,
+            )),
             "split" => {
                 let rest = text[head.len()..].trim_start();
                 let delim = parse_regex_literal(rest, line_no)?;
@@ -870,10 +1056,7 @@ fn parse_selector(s: &str) -> Result<(SubPattern, LevelPattern)> {
     let sub = if sub_str == "*" {
         SubPattern::Star
     } else {
-        let alts: Vec<String> = sub_str
-            .split('|')
-            .map(|s| s.trim().to_string())
-            .collect();
+        let alts: Vec<String> = sub_str.split('|').map(|s| s.trim().to_string()).collect();
         if alts.iter().any(|a| a.is_empty()) {
             bail!("empty alternative in sub pattern `{}`", sub_str);
         }
@@ -944,11 +1127,17 @@ fn parse_atom(s: &str, line_no: usize) -> Result<Atom> {
         ("exit", Some("ok")) => Ok(Atom::Exit(ExitMatch::Ok)),
         ("exit", Some("failed")) => Ok(Atom::Exit(ExitMatch::Failed)),
         ("exit", Some(v)) => {
-            bail!("line {}: unknown exit value `{}` (expected ok|failed)", line_no, v)
+            bail!(
+                "line {}: unknown exit value `{}` (expected ok|failed)",
+                line_no,
+                v
+            )
         }
         ("exit", None) => bail!("line {}: `exit` guard needs a value (ok|failed)", line_no),
         ("level", Some(v)) => {
-            let lvl: Level = v.parse().map_err(|e: String| anyhow!("line {line_no}: {e}"))?;
+            let lvl: Level = v
+                .parse()
+                .map_err(|e: String| anyhow!("line {line_no}: {e}"))?;
             Ok(Atom::Level(lvl))
         }
         ("level", None) => bail!("line {}: `level` guard needs a value", line_no),
@@ -1043,11 +1232,7 @@ fn parse_regex_literal(s: &str, line_no: usize) -> Result<PatternRegex> {
 fn parse_regex_literal_and_rest(s: &str, line_no: usize) -> Result<(PatternRegex, &str)> {
     let s = s.trim_start();
     if !s.starts_with('/') {
-        bail!(
-            "line {}: expected `/regex/`, got `{}`",
-            line_no,
-            preview(s)
-        );
+        bail!("line {}: expected `/regex/`, got `{}`", line_no, preview(s));
     }
     let body = &s[1..];
     let mut src = String::new();
@@ -1101,11 +1286,7 @@ fn parse_string_literal(s: &str, line_no: usize) -> Result<String> {
 fn parse_string_literal_and_rest(s: &str, line_no: usize) -> Result<(String, &str)> {
     let s = s.trim_start();
     if !s.starts_with('"') {
-        bail!(
-            "line {}: expected `\"...\"`, got `{}`",
-            line_no,
-            preview(s)
-        );
+        bail!("line {}: expected `\"...\"`, got `{}`", line_no, preview(s));
     }
     let body = &s[1..];
     let mut out = String::new();
@@ -1145,13 +1326,9 @@ fn parse_head_arg(s: &str, line_no: usize) -> Result<HeadArg> {
     if s == "auto" {
         return Ok(HeadArg::Auto);
     }
-    s.parse::<usize>().map(HeadArg::Number).map_err(|_| {
-        anyhow!(
-            "line {}: expected number or `auto`, got `{}`",
-            line_no,
-            s
-        )
-    })
+    s.parse::<usize>()
+        .map(HeadArg::Number)
+        .map_err(|_| anyhow!("line {}: expected number or `auto`, got `{}`", line_no, s))
 }
 
 fn parse_macro_args(s: &str, line_no: usize) -> Result<Vec<MacroArg>> {
@@ -1266,11 +1443,7 @@ pub struct ExplainTrace {
 /// recorded — macros and split sub-chains run silently. Adds ~µs of
 /// overhead per op for line/byte counting; safe for interactive use,
 /// avoid in tight loops.
-pub fn execute_explain(
-    rs: &RuleSet,
-    ctx: &ExecCtx,
-    input: &str,
-) -> Result<(String, ExplainTrace)> {
+pub fn execute_explain(rs: &RuleSet, ctx: &ExecCtx, input: &str) -> Result<(String, ExplainTrace)> {
     let mut trace = ExplainTrace::default();
     let Some((idx, rule)) = rs
         .rules
@@ -1475,9 +1648,9 @@ fn atom_matches(a: &Atom, ctx: &ExecCtx) -> bool {
 /// (prune) differently from `-o json` (pass through byte-exact).
 fn flag_matches(spec: &str, args: &[String]) -> bool {
     match spec.split_once(char::is_whitespace) {
-        None => args.iter().any(|a| {
-            a == spec || a.split_once('=').is_some_and(|(name, _)| name == spec)
-        }),
+        None => args
+            .iter()
+            .any(|a| a == spec || a.split_once('=').is_some_and(|(name, _)| name == spec)),
         Some((flag, value)) => {
             let value = value.trim();
             args.windows(2).any(|w| w[0] == flag && w[1] == value)
@@ -1495,10 +1668,7 @@ fn resolve_head(arg: &HeadArg, level: Level) -> usize {
 }
 
 fn filter_lines(s: &str, mut keep: impl FnMut(&str) -> bool) -> String {
-    s.lines()
-        .filter(|l| keep(l))
-        .collect::<Vec<_>>()
-        .join("\n")
+    s.lines().filter(|l| keep(l)).collect::<Vec<_>>().join("\n")
 }
 
 fn take_head(s: &str, n: usize) -> String {
@@ -1987,14 +2157,20 @@ foo:
 
     #[test]
     fn git_compact_plugin_parses() {
-        let src = include_str!(
-            "../../lowfat-plugin/embedded/git/git-compact/filter.lf"
-        );
+        let src = include_str!("../../lowfat-plugin/embedded/git/git-compact/filter.lf");
         let rs = parse_ok(src);
         // Defines: strip-trailers, abbrev-hash, compact-diff, drop-index-meta
         assert_eq!(rs.defines.len(), 4);
         let names: Vec<&str> = rs.defines.iter().map(|d| d.name.as_str()).collect();
-        assert_eq!(names, ["strip-trailers", "abbrev-hash", "compact-diff", "drop-index-meta"]);
+        assert_eq!(
+            names,
+            [
+                "strip-trailers",
+                "abbrev-hash",
+                "compact-diff",
+                "drop-index-meta"
+            ]
+        );
         assert_eq!(rs.defines[2].params, vec!["limit".to_string()]);
 
         // Selection sanity
@@ -2294,18 +2470,14 @@ foo:
         assert!(has_pep723_header(
             "# /// script\n# dependencies = []\n# ///\nimport sys"
         ));
-        assert!(has_pep723_header(
-            "    # /// script\n    # ///\nimport sys"
-        ));
+        assert!(has_pep723_header("    # /// script\n    # ///\nimport sys"));
         assert!(!has_pep723_header("import sys\nprint('hi')"));
         assert!(!has_pep723_header("# not pep 723\nprint('hi')"));
     }
 
     #[test]
     fn kubectl_compact_plugin_parses() {
-        let src = include_str!(
-            "../../../test-fixtures/plugins/kubectl/kubectl-compact/filter.lf"
-        );
+        let src = include_str!("../../../test-fixtures/plugins/kubectl/kubectl-compact/filter.lf");
         let rs = parse_ok(src);
         // Define: clean-yaml (with PEP 723 body)
         assert_eq!(rs.defines.len(), 1);
@@ -2359,8 +2531,18 @@ diff:
 "#,
         );
         let input = "a\nb\nc\n";
-        let failed = ExecCtx { sub: "diff", level: Level::Full, exit_code: 1, args: &[] };
-        let ok = ExecCtx { sub: "diff", level: Level::Full, exit_code: 0, args: &[] };
+        let failed = ExecCtx {
+            sub: "diff",
+            level: Level::Full,
+            exit_code: 1,
+            args: &[],
+        };
+        let ok = ExecCtx {
+            sub: "diff",
+            level: Level::Full,
+            exit_code: 0,
+            args: &[],
+        };
         assert_eq!(execute(&rs, &failed, input).unwrap(), "a\nb\nc\n");
         assert_eq!(execute(&rs, &ok, input).unwrap(), "a\n");
     }
@@ -2377,9 +2559,24 @@ diff:
         );
         let input = "1\n2\n3\n4\n";
         let stat = vec!["--stat".to_string()];
-        let ultra_stat = ExecCtx { sub: "diff", level: Level::Ultra, exit_code: 0, args: &stat };
-        let full_stat = ExecCtx { sub: "diff", level: Level::Full, exit_code: 0, args: &stat };
-        let plain = ExecCtx { sub: "diff", level: Level::Full, exit_code: 0, args: &[] };
+        let ultra_stat = ExecCtx {
+            sub: "diff",
+            level: Level::Ultra,
+            exit_code: 0,
+            args: &stat,
+        };
+        let full_stat = ExecCtx {
+            sub: "diff",
+            level: Level::Full,
+            exit_code: 0,
+            args: &stat,
+        };
+        let plain = ExecCtx {
+            sub: "diff",
+            level: Level::Full,
+            exit_code: 0,
+            args: &[],
+        };
         assert_eq!(execute(&rs, &ultra_stat, input).unwrap(), "1\n");
         assert_eq!(execute(&rs, &full_stat, input).unwrap(), "1\n2\n");
         assert_eq!(execute(&rs, &plain, input).unwrap(), "1\n2\n3\n");
@@ -2395,9 +2592,24 @@ diff:
         let split = vec!["--output".to_string(), "json".to_string()];
         let glued = vec!["--output=json".to_string()];
         let none = vec!["pods".to_string()];
-        let split_ctx = ExecCtx { sub: "get", level: Level::Full, exit_code: 0, args: &split };
-        let glued_ctx = ExecCtx { sub: "get", level: Level::Full, exit_code: 0, args: &glued };
-        let none_ctx = ExecCtx { sub: "get", level: Level::Full, exit_code: 0, args: &none };
+        let split_ctx = ExecCtx {
+            sub: "get",
+            level: Level::Full,
+            exit_code: 0,
+            args: &split,
+        };
+        let glued_ctx = ExecCtx {
+            sub: "get",
+            level: Level::Full,
+            exit_code: 0,
+            args: &glued,
+        };
+        let none_ctx = ExecCtx {
+            sub: "get",
+            level: Level::Full,
+            exit_code: 0,
+            args: &none,
+        };
         assert_eq!(execute(&rs, &split_ctx, input).unwrap(), input);
         assert_eq!(execute(&rs, &glued_ctx, input).unwrap(), input);
         // No output flag → compaction (head 1) still applies.
@@ -2409,7 +2621,12 @@ diff:
         // `--stat` must NOT match `--statistics` — the `=` split guards this.
         let rs = parse_ok("diff:\n    if --stat: head 1\n    else: head 2\n");
         let stats = vec!["--statistics".to_string()];
-        let ctx = ExecCtx { sub: "diff", level: Level::Full, exit_code: 0, args: &stats };
+        let ctx = ExecCtx {
+            sub: "diff",
+            level: Level::Full,
+            exit_code: 0,
+            args: &stats,
+        };
         assert_eq!(execute(&rs, &ctx, "1\n2\n3\n").unwrap(), "1\n2\n");
     }
 
@@ -2427,7 +2644,12 @@ diff:
             (vec!["-o".to_string(), "json".to_string()], input), // else → raw
         ];
         for (args, want) in cases {
-            let ctx = ExecCtx { sub: "get", level: Level::Full, exit_code: 0, args: &args };
+            let ctx = ExecCtx {
+                sub: "get",
+                level: Level::Full,
+                exit_code: 0,
+                args: &args,
+            };
             assert_eq!(execute(&rs, &ctx, input).unwrap(), want, "args={args:?}");
         }
     }
@@ -2461,13 +2683,22 @@ diff:
     fn or_is_alias_of_else() {
         let new = parse_ok("s:\n    keep /Z/\n    or \"clean\"\n");
         let old = parse_ok("s:\n    keep /Z/\n    else \"clean\"\n");
-        assert_eq!(execute(&new, &ctx("s", Level::Full), "nope\n").unwrap(), "clean\n");
-        assert_eq!(execute(&old, &ctx("s", Level::Full), "nope\n").unwrap(), "clean\n");
+        assert_eq!(
+            execute(&new, &ctx("s", Level::Full), "nope\n").unwrap(),
+            "clean\n"
+        );
+        assert_eq!(
+            execute(&old, &ctx("s", Level::Full), "nope\n").unwrap(),
+            "clean\n"
+        );
     }
 
     #[test]
     fn errors_on_unknown_guard_value() {
-        let chain = format!("{:#}", parse("diff:\n    if exit boom: head 1\n").unwrap_err());
+        let chain = format!(
+            "{:#}",
+            parse("diff:\n    if exit boom: head 1\n").unwrap_err()
+        );
         assert!(chain.contains("unknown exit value"), "got: {chain}");
     }
 
@@ -2539,8 +2770,18 @@ diff:
 "#,
         );
         let input = "a\nb\nc\n";
-        let failed = ExecCtx { sub: "diff", level: Level::Full, exit_code: 1, args: &[] };
-        let okctx = ExecCtx { sub: "diff", level: Level::Full, exit_code: 0, args: &[] };
+        let failed = ExecCtx {
+            sub: "diff",
+            level: Level::Full,
+            exit_code: 1,
+            args: &[],
+        };
+        let okctx = ExecCtx {
+            sub: "diff",
+            level: Level::Full,
+            exit_code: 0,
+            args: &[],
+        };
         assert_eq!(execute(&rs, &failed, input).unwrap(), "a\nb\nc\n");
         assert_eq!(execute(&rs, &okctx, input).unwrap(), "a\n");
     }
@@ -2560,10 +2801,30 @@ plan:
 "#,
         );
         let input = "a\nb\nc\nd\n";
-        let failed = ExecCtx { sub: "plan", level: Level::Full, exit_code: 1, args: &[] };
-        let ok_full = ExecCtx { sub: "plan", level: Level::Full, exit_code: 0, args: &[] };
-        let ok_ultra = ExecCtx { sub: "plan", level: Level::Ultra, exit_code: 0, args: &[] };
-        let ok_lite = ExecCtx { sub: "plan", level: Level::Lite, exit_code: 0, args: &[] };
+        let failed = ExecCtx {
+            sub: "plan",
+            level: Level::Full,
+            exit_code: 1,
+            args: &[],
+        };
+        let ok_full = ExecCtx {
+            sub: "plan",
+            level: Level::Full,
+            exit_code: 0,
+            args: &[],
+        };
+        let ok_ultra = ExecCtx {
+            sub: "plan",
+            level: Level::Ultra,
+            exit_code: 0,
+            args: &[],
+        };
+        let ok_lite = ExecCtx {
+            sub: "plan",
+            level: Level::Lite,
+            exit_code: 0,
+            args: &[],
+        };
         assert_eq!(execute(&rs, &failed, input).unwrap(), input);
         assert_eq!(execute(&rs, &ok_full, input).unwrap(), "a\nb\n");
         assert_eq!(execute(&rs, &ok_ultra, input).unwrap(), "a\n");
@@ -2572,7 +2833,10 @@ plan:
 
     #[test]
     fn match_missing_dimension_errors() {
-        let chain = format!("{:#}", parse("plan:\n    match:\n        ultra: head 1\n").unwrap_err());
+        let chain = format!(
+            "{:#}",
+            parse("plan:\n    match:\n        ultra: head 1\n").unwrap_err()
+        );
         assert!(chain.contains("needs a dimension"), "got: {chain}");
     }
 
@@ -2600,9 +2864,148 @@ plan:
             "{:#}",
             parse("plan:\n    match level: head 1\n").unwrap_err()
         );
-        assert!(
-            chain.contains("doesn't take inline ops"),
-            "got: {chain}"
+        assert!(chain.contains("doesn't take inline ops"), "got: {chain}");
+    }
+
+    // ── include ──────────────────────────────────────────────────
+
+    fn write(dir: &Path, name: &str, body: &str) -> PathBuf {
+        let p = dir.join(name);
+        std::fs::write(&p, body).unwrap();
+        p
+    }
+
+    #[test]
+    fn include_merges_defines_and_resolves_calls() {
+        let d = tempfile::tempdir().unwrap();
+        write(d.path(), "lib.lf", "define trim:\n    head 5\n");
+        let root = write(d.path(), "main.lf", "include lib.lf\n\n*:\n    trim\n");
+
+        let rs = load(&root).unwrap();
+        assert!(rs.find_define("trim").is_some(), "imported macro present");
+        // `trim` parsed as a macro call, not an unknown op.
+        assert!(matches!(rs.rules[0].ops[0], Op::MacroCall { .. }));
+    }
+
+    #[test]
+    fn include_resolves_relative_to_including_file() {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::create_dir(d.path().join("sub")).unwrap();
+        write(d.path(), "sub/lib.lf", "define trim:\n    head 5\n");
+        // path is relative to main.lf, which lives next to sub/.
+        let root = write(d.path(), "main.lf", "include sub/lib.lf\n*:\n    trim\n");
+
+        assert!(load(&root).unwrap().find_define("trim").is_some());
+    }
+
+    #[test]
+    fn include_is_transitive() {
+        let d = tempfile::tempdir().unwrap();
+        write(d.path(), "a.lf", "define ay:\n    head 1\n");
+        write(d.path(), "b.lf", "include a.lf\ndefine bee:\n    head 2\n");
+        let root = write(d.path(), "main.lf", "include b.lf\n*:\n    ay\n    bee\n");
+
+        let rs = load(&root).unwrap();
+        assert!(rs.find_define("ay").is_some());
+        assert!(rs.find_define("bee").is_some());
+    }
+
+    #[test]
+    fn diamond_import_is_not_a_conflict() {
+        // main -> b, c; both -> shared. `shared`'s macro reaches main twice
+        // via the same origin, which must dedup rather than error.
+        let d = tempfile::tempdir().unwrap();
+        write(d.path(), "shared.lf", "define common:\n    head 1\n");
+        write(d.path(), "b.lf", "include shared.lf\n");
+        write(d.path(), "c.lf", "include shared.lf\n");
+        let root = write(
+            d.path(),
+            "main.lf",
+            "include b.lf\ninclude c.lf\n*:\n    common\n",
         );
+
+        let rs = load(&root).unwrap();
+        assert_eq!(rs.defines.iter().filter(|x| x.name == "common").count(), 1);
+    }
+
+    #[test]
+    fn conflicting_imports_error() {
+        let d = tempfile::tempdir().unwrap();
+        write(d.path(), "x.lf", "define dup:\n    head 1\n");
+        write(d.path(), "y.lf", "define dup:\n    head 2\n");
+        let root = write(
+            d.path(),
+            "main.lf",
+            "include x.lf\ninclude y.lf\n*:\n    dup\n",
+        );
+
+        let err = format!("{:#}", load(&root).unwrap_err());
+        assert!(err.contains("imported from both"), "got: {err}");
+    }
+
+    #[test]
+    fn local_define_overrides_inherited() {
+        let d = tempfile::tempdir().unwrap();
+        write(d.path(), "lib.lf", "define trim:\n    head 5\n");
+        let root = write(
+            d.path(),
+            "main.lf",
+            "include lib.lf\ndefine trim:\n    head 99\n*:\n    trim\n",
+        );
+
+        let rs = load(&root).unwrap();
+        let def = rs.find_define("trim").unwrap();
+        assert_eq!(def.ops.len(), 1);
+        assert!(matches!(def.ops[0], Op::Head(HeadArg::Number(99))));
+    }
+
+    #[test]
+    fn include_cycle_errors() {
+        let d = tempfile::tempdir().unwrap();
+        write(d.path(), "a.lf", "include b.lf\n");
+        let root = write(d.path(), "b.lf", "include a.lf\n");
+
+        let err = format!("{:#}", load(&root).unwrap_err());
+        assert!(err.contains("include cycle"), "got: {err}");
+    }
+
+    #[test]
+    fn included_file_rules_are_ignored() {
+        let d = tempfile::tempdir().unwrap();
+        // lib.lf is a runnable filter too — its rules must not leak in.
+        write(
+            d.path(),
+            "lib.lf",
+            "define trim:\n    head 5\ngit:\n    head 1\n",
+        );
+        let root = write(d.path(), "main.lf", "include lib.lf\n*:\n    trim\n");
+
+        let rs = load(&root).unwrap();
+        assert_eq!(rs.rules.len(), 1, "only the root's rule");
+        assert!(matches!(rs.rules[0].sub, SubPattern::Star));
+    }
+
+    #[test]
+    fn missing_include_errors() {
+        let d = tempfile::tempdir().unwrap();
+        let root = write(d.path(), "main.lf", "include nope.lf\n*:\n    head 1\n");
+        assert!(load(&root).is_err());
+    }
+
+    #[test]
+    fn quoted_include_path() {
+        let d = tempfile::tempdir().unwrap();
+        write(d.path(), "lib.lf", "define trim:\n    head 5\n");
+        let root = write(d.path(), "main.lf", "include \"lib.lf\"\n*:\n    trim\n");
+        assert!(load(&root).unwrap().find_define("trim").is_some());
+    }
+
+    #[test]
+    fn bare_parse_rejects_include() {
+        let err = format!(
+            "{:#}",
+            parse("include lib.lf\n*:\n    head 1\n").unwrap_err()
+        );
+        assert!(err.contains("include"), "got: {err}");
     }
 }

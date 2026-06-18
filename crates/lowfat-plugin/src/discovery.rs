@@ -20,9 +20,7 @@ impl PluginSource {
     pub fn display_path(&self, category: &str, name: &str) -> PathBuf {
         match self {
             PluginSource::Disk { base_dir } => base_dir.clone(),
-            PluginSource::Embedded { .. } => {
-                PathBuf::from(format!("<embedded>/{category}/{name}"))
-            }
+            PluginSource::Embedded { .. } => PathBuf::from(format!("<embedded>/{category}/{name}")),
         }
     }
 
@@ -43,7 +41,8 @@ impl DiscoveredPlugin {
     /// Path to the plugin's root directory (for disk-backed plugins) or a
     /// synthetic `<embedded>/...` placeholder. Use for display only.
     pub fn base_dir(&self) -> PathBuf {
-        self.source.display_path(&self.category, &self.manifest.plugin.name)
+        self.source
+            .display_path(&self.category, &self.manifest.plugin.name)
     }
 
     pub fn is_embedded(&self) -> bool {
@@ -110,10 +109,7 @@ fn scan_plugin_dir(dir: &Path, plugins: &mut Vec<DiscoveredPlugin>) {
         if !category_path.is_dir() {
             continue;
         }
-        let category = category_entry
-            .file_name()
-            .to_string_lossy()
-            .to_string();
+        let category = category_entry.file_name().to_string_lossy().to_string();
 
         let plugin_entries = match fs::read_dir(&category_path) {
             Ok(e) => e,
@@ -152,7 +148,9 @@ fn scan_plugin_dir(dir: &Path, plugins: &mut Vec<DiscoveredPlugin>) {
             plugins.push(DiscoveredPlugin {
                 manifest,
                 category: category.clone(),
-                source: PluginSource::Disk { base_dir: plugin_path },
+                source: PluginSource::Disk {
+                    base_dir: plugin_path,
+                },
             });
             break;
         }
@@ -183,7 +181,11 @@ mod tests {
         // A nonexistent dir yields only the embedded set (no disk plugins).
         let found = discover_plugins(Path::new("/nonexistent-lowfat-test-dir"));
         let embedded: Vec<_> = found.iter().filter(|p| p.is_embedded()).collect();
-        assert_eq!(embedded.len(), EMBEDDED.len(), "all embedded plugins discovered");
+        assert_eq!(
+            embedded.len(),
+            EMBEDDED.len(),
+            "all embedded plugins discovered"
+        );
 
         for p in &embedded {
             if let PluginSource::Embedded { filter_lf } = &p.source {

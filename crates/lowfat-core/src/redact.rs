@@ -11,7 +11,7 @@
 //! Rust; only the *patterns* are data, because compliance needs differ
 //! per organisation (PCI, HIPAA, internal token formats).
 
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{anyhow, bail, Context, Result};
 use regex::Regex;
 use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, OnceLock};
@@ -58,7 +58,10 @@ fn defaults() -> &'static [(&'static str, &'static str)] {
             r#"(?i)(api[_-]?key|api[_-]?secret|api[_-]?token|access[_-]?token|secret[_-]?key|auth[_-]?token|private[_-]?key)\s*[=:]\s*['"]?([A-Za-z0-9/+=\-_.]{16,})['"]?"#,
             "$1=[REDACTED]",
         ),
-        (r"(?i)(Bearer\s+)[A-Za-z0-9\-_.~+/]+=*", "${1}[REDACTED:bearer]"),
+        (
+            r"(?i)(Bearer\s+)[A-Za-z0-9\-_.~+/]+=*",
+            "${1}[REDACTED:bearer]",
+        ),
         (
             r"eyJ[A-Za-z0-9\-_]+\.eyJ[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_.+/=]+",
             "[REDACTED:jwt]",
@@ -91,8 +94,8 @@ impl RedactRules {
     /// `<regex> => <replacement>`. A bare `!no-defaults` line drops the
     /// built-in baseline. Returns the rules and the no-defaults flag.
     fn parse_file(path: &Path) -> Result<(Vec<RedactRule>, bool)> {
-        let text = std::fs::read_to_string(path)
-            .with_context(|| format!("reading {}", path.display()))?;
+        let text =
+            std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
         let mut rules = Vec::new();
         let mut no_defaults = false;
         for (i, raw) in text.lines().enumerate() {
@@ -221,7 +224,11 @@ mod tests {
     #[test]
     fn parse_basic_rule() {
         let dir = tempfile::tempdir().unwrap();
-        let f = write(dir.path(), "redact.conf", "# a comment\nFOO-[0-9]+ => [X]\n");
+        let f = write(
+            dir.path(),
+            "redact.conf",
+            "# a comment\nFOO-[0-9]+ => [X]\n",
+        );
         let (rules, nd) = RedactRules::parse_file(&f).unwrap();
         assert_eq!(rules.len(), 1);
         assert!(!nd);
@@ -255,10 +262,17 @@ mod tests {
     #[test]
     fn no_defaults_directive() {
         let dir = tempfile::tempdir().unwrap();
-        let g = write(dir.path(), "g.conf", "!no-defaults\nEMP-[0-9]{3} => [EMP]\n");
+        let g = write(
+            dir.path(),
+            "g.conf",
+            "!no-defaults\nEMP-[0-9]{3} => [EMP]\n",
+        );
         let rs = RedactRules::load(Some(&g), None).unwrap();
         let out = rs.apply("AKIA0000000000000000 EMP-123");
-        assert!(out.contains("AKIA0000000000000000"), "default dropped: {out}");
+        assert!(
+            out.contains("AKIA0000000000000000"),
+            "default dropped: {out}"
+        );
         assert!(out.contains("[EMP]"));
     }
 

@@ -56,9 +56,7 @@ fn format_filters(config: &RunfConfig, plugins: &[DiscoveredPlugin]) -> String {
     }
 
     // Split bundled (embedded into the binary) from disk-installed for display.
-    let (bundled, community): (Vec<_>, Vec<_>) = plugins
-        .iter()
-        .partition(|p| p.is_embedded());
+    let (bundled, community): (Vec<_>, Vec<_>) = plugins.iter().partition(|p| p.is_embedded());
 
     if !bundled.is_empty() {
         writeln!(out, "  bundled:").unwrap();
@@ -136,7 +134,9 @@ mod tests {
     /// `discover_plugins(empty_dir)` yields (git/docker/ls fall back to the
     /// bundled set when nothing's on disk).
     fn render_with_bundled(config: &RunfConfig) -> String {
-        let plugins = lowfat_plugin::discovery::discover_plugins(std::path::Path::new("/nonexistent-dir-for-test"));
+        let plugins = lowfat_plugin::discovery::discover_plugins(std::path::Path::new(
+            "/nonexistent-dir-for-test",
+        ));
         format_filters(config, &plugins)
     }
 
@@ -181,7 +181,10 @@ mod tests {
         let config = default_config();
         let output = render_with_bundled(&config);
         let git_count = output.matches("git-compact").count();
-        assert_eq!(git_count, 1, "git-compact should appear once, got {git_count}");
+        assert_eq!(
+            git_count, 1,
+            "git-compact should appear once, got {git_count}"
+        );
     }
 
     #[test]

@@ -35,12 +35,8 @@ pub fn run() -> Result<()> {
     const R: &str = "\x1b[0m";
 
     println!();
-    println!(
-        "  {Y}💰{R} {D}saved:{R} {B}{input}{R} {D}→{R} {G}{B}{output}{R} {D}tokens{R}"
-    );
-    println!(
-        "  {Y}⚡{R} {D}speed:{R} {B}{time_without:.1}s{R} {D}→{R} {G}{B}{time_s:.1}s{R}"
-    );
+    println!("  {Y}💰{R} {D}saved:{R} {B}{input}{R} {D}→{R} {G}{B}{output}{R} {D}tokens{R}");
+    println!("  {Y}⚡{R} {D}speed:{R} {B}{time_without:.1}s{R} {D}→{R} {G}{B}{time_s:.1}s{R}");
     println!();
 
     Ok(())

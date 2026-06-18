@@ -142,9 +142,7 @@ impl Pipeline {
 ///   pipeline.git.error = strip-ansi | head
 ///   pipeline.git.empty = passthrough
 ///   pipeline.git.large = strip-ansi | git-compact | token-budget
-pub fn parse_conditional_pipeline(
-    lines: &[(String, String)],
-) -> ConditionalPipelines {
+pub fn parse_conditional_pipeline(lines: &[(String, String)]) -> ConditionalPipelines {
     let mut cp = ConditionalPipelines::default();
     for (key, spec) in lines {
         match key.as_str() {
@@ -184,12 +182,24 @@ fn parse_stage_spec(spec: &str) -> ParsedStage {
             let rest = rest.trim();
             // Try numeric first, fall back to string pattern
             if let Ok(n) = rest.parse::<usize>() {
-                ParsedStage { name, param: Some(n), pattern: None }
+                ParsedStage {
+                    name,
+                    param: Some(n),
+                    pattern: None,
+                }
             } else {
-                ParsedStage { name, param: None, pattern: Some(rest.to_string()) }
+                ParsedStage {
+                    name,
+                    param: None,
+                    pattern: Some(rest.to_string()),
+                }
             }
         }
-        None => ParsedStage { name: spec.trim().to_string(), param: None, pattern: None },
+        None => ParsedStage {
+            name: spec.trim().to_string(),
+            param: None,
+            pattern: None,
+        },
     }
 }
 
@@ -197,9 +207,7 @@ fn parse_stage_spec(spec: &str) -> ParsedStage {
 fn resolve_stage_type(name: &str) -> StageType {
     match name {
         "strip-ansi" | "truncate" | "token-budget" | "dedup-blank" | "normalize" | "head"
-        | "passthrough" | "redact-secrets" | "grep" | "grep-v" | "cut" => {
-            StageType::Builtin
-        }
+        | "passthrough" | "redact-secrets" | "grep" | "grep-v" | "cut" => StageType::Builtin,
         _ => StageType::Plugin,
     }
 }
@@ -350,7 +358,11 @@ pub fn proc_cut(text: &str, spec: &str) -> String {
             let s = s.trim();
             if let Some((a, b)) = s.split_once('-') {
                 let start = a.parse::<usize>().ok()?;
-                let end = if b.is_empty() { usize::MAX } else { b.parse::<usize>().ok()? };
+                let end = if b.is_empty() {
+                    usize::MAX
+                } else {
+                    b.parse::<usize>().ok()?
+                };
                 Some((start, end))
             } else {
                 let n = s.parse::<usize>().ok()?;
@@ -374,7 +386,9 @@ pub fn proc_cut(text: &str, spec: &str) -> String {
                 let end = end.min(n);
                 for i in start..=end {
                     if let Some(&field) = parts.get(i.checked_sub(1).unwrap_or(0)) {
-                        if i >= 1 { selected.push(field); }
+                        if i >= 1 {
+                            selected.push(field);
+                        }
                     }
                 }
             }
@@ -387,7 +401,13 @@ pub fn proc_cut(text: &str, spec: &str) -> String {
 /// Apply a built-in processor by name. Returns None if not a built-in.
 /// When `param` is Some, it overrides the level-based default.
 /// When `pattern` is Some, it provides a string param (regex for grep, field spec for cut).
-pub fn apply_builtin(name: &str, text: &str, level: Level, param: Option<usize>, pattern: Option<&str>) -> Option<String> {
+pub fn apply_builtin(
+    name: &str,
+    text: &str,
+    level: Level,
+    param: Option<usize>,
+    pattern: Option<&str>,
+) -> Option<String> {
     match name {
         "strip-ansi" => Some(proc_strip_ansi(text)),
         "truncate" => {
@@ -515,7 +535,10 @@ mod tests {
         let lines = vec![
             ("".to_string(), "strip-ansi | git-compact".to_string()),
             ("error".to_string(), "head".to_string()),
-            ("large".to_string(), "git-compact | token-budget".to_string()),
+            (
+                "large".to_string(),
+                "git-compact | token-budget".to_string(),
+            ),
         ];
         let cp = parse_conditional_pipeline(&lines);
         assert!(cp.default.is_some());
@@ -628,7 +651,10 @@ mod tests {
 
     #[test]
     fn param_overrides_level_default() {
-        let lines = (0..500).map(|i| format!("line{i}")).collect::<Vec<_>>().join("\n");
+        let lines = (0..500)
+            .map(|i| format!("line{i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
         // Without param: Full level truncate = 200 lines
         let default_result = apply_builtin("truncate", &lines, Level::Full, None, None).unwrap();
         assert!(default_result.contains("truncated"));
@@ -696,7 +722,12 @@ mod tests {
     #[test]
     fn redact_slack_token() {
         // Build the token at runtime to avoid GitHub push protection flagging it
-        let token = format!("xoxb-{}-{}-{}", "0".repeat(12), "0".repeat(13), "a".repeat(24));
+        let token = format!(
+            "xoxb-{}-{}-{}",
+            "0".repeat(12),
+            "0".repeat(13),
+            "a".repeat(24)
+        );
         let input = format!("SLACK_TOKEN={token}");
         let out = proc_redact_secrets(&input);
         assert!(out.contains("[REDACTED:slack-token]"));
@@ -738,14 +769,16 @@ mod tests {
     #[test]
     fn grep_via_apply_builtin() {
         let input = "  M src/main.rs\n?? temp.txt\n  D old.rs";
-        let result = apply_builtin("grep", input, Level::Full, None, Some("^\\s*[MADRCU?!]")).unwrap();
+        let result =
+            apply_builtin("grep", input, Level::Full, None, Some("^\\s*[MADRCU?!]")).unwrap();
         assert_eq!(result, "  M src/main.rs\n?? temp.txt\n  D old.rs");
     }
 
     #[test]
     fn grep_v_via_apply_builtin() {
         let input = "index abc123..def456\nmode 100644\n+++ b/file.rs\n--- a/file.rs";
-        let result = apply_builtin("grep-v", input, Level::Full, None, Some("^(index |mode )")).unwrap();
+        let result =
+            apply_builtin("grep-v", input, Level::Full, None, Some("^(index |mode )")).unwrap();
         assert_eq!(result, "+++ b/file.rs\n--- a/file.rs");
     }
 

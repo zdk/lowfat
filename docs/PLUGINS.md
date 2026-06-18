@@ -139,6 +139,27 @@ diff:           compact-diff 200
 strip-trailers              # zero-arg call
 ```
 
+## Sharing macros: `include`
+
+Pull another file's `define`s into the current file so wrappers can reuse a
+tool's compaction instead of copying it:
+
+```awk
+include lib/pytest.lf       # path is relative to THIS file
+
+*:
+    compact-pytest 45       # macro defined in lib/pytest.lf
+```
+
+- **Macros only.** Rules in an included file are ignored, so a real filter can
+  also serve as a library.
+- **Path is relative to the including file**; transitive includes work.
+- **Override by redefining.** A local `define` with the same name shadows the
+  imported one — handy to tweak a single inherited macro.
+- **Collisions error.** The same name imported from two different files is a
+  hard error (rename one, or override it locally). Cycles are rejected.
+- Only files loaded from disk can `include` — embedded/bundled filters can't.
+
 ## Inline ops on a rule header
 
 ```awk

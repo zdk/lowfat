@@ -55,9 +55,9 @@ mod tests {
         // Discover from a deliberately-empty disk dir so we exercise only the
         // embedded plugins (git/docker/ls). Real callers use the resolved
         // plugin_dir.
-        let plugins = lowfat_plugin::discovery::discover_plugins(
-            std::path::Path::new("/nonexistent-dir-for-test"),
-        );
+        let plugins = lowfat_plugin::discovery::discover_plugins(std::path::Path::new(
+            "/nonexistent-dir-for-test",
+        ));
         let map = lowfat_plugin::discovery::resolve_plugins(&plugins);
         if map.contains_key(base_cmd) {
             Some(format!("lowfat {command}"))

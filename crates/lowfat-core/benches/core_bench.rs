@@ -112,14 +112,29 @@ fn bench_apply_builtin(c: &mut Criterion) {
     let text = make_ansi_text(200);
 
     let mut group = c.benchmark_group("apply_builtin");
-    for name in &["strip-ansi", "truncate", "head", "token-budget", "dedup-blank", "passthrough"] {
+    for name in &[
+        "strip-ansi",
+        "truncate",
+        "head",
+        "token-budget",
+        "dedup-blank",
+        "passthrough",
+    ] {
         group.bench_function(*name, |b| {
             b.iter(|| apply_builtin(black_box(name), black_box(&text), Level::Full, None, None))
         });
     }
     // Unknown name returns None immediately
     group.bench_function("unknown", |b| {
-        b.iter(|| apply_builtin(black_box("git-compact"), black_box(&text), Level::Full, None, None))
+        b.iter(|| {
+            apply_builtin(
+                black_box("git-compact"),
+                black_box(&text),
+                Level::Full,
+                None,
+                None,
+            )
+        })
     });
     group.finish();
 }

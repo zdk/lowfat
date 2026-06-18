@@ -1,5 +1,5 @@
 use crate::level::Level;
-use crate::pipeline::{ConditionalPipelines, parse_conditional_pipeline};
+use crate::pipeline::{parse_conditional_pipeline, ConditionalPipelines};
 use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fs;
@@ -71,9 +71,7 @@ impl RunfConfig {
                             level = l;
                         }
                     } else if let Some(val) = line.strip_prefix("filters=") {
-                        allowed = Some(
-                            val.split(',').map(|s| s.trim().to_string()).collect(),
-                        );
+                        allowed = Some(val.split(',').map(|s| s.trim().to_string()).collect());
                     } else if let Some(val) = line.strip_prefix("disable=") {
                         for name in val.split(',') {
                             disabled.insert(name.trim().to_string());
@@ -311,12 +309,7 @@ mod tests {
 
     #[test]
     fn home_dot_lowfat_used_when_neither_xdg_set_nor_exists() {
-        let r = resolve_home_dir(
-            None,
-            None,
-            std::path::Path::new("/home/user"),
-            &|_| false,
-        );
+        let r = resolve_home_dir(None, None, std::path::Path::new("/home/user"), &|_| false);
         assert_eq!(r, PathBuf::from("/home/user/.lowfat"));
     }
 
@@ -344,12 +337,9 @@ mod tests {
         let xdg_dir = home.join(".config/lowfat");
         // path_is_dir reports only the XDG path as a directory; ~/.lowfat
         // exists on the real fs as a file but is_dir returns false.
-        let r = resolve_home_dir(
-            None,
-            Some("/home/user/.config"),
-            &home,
-            &|p| p == xdg_dir.as_path(),
-        );
+        let r = resolve_home_dir(None, Some("/home/user/.config"), &home, &|p| {
+            p == xdg_dir.as_path()
+        });
         assert_eq!(r, xdg_dir);
     }
 

@@ -275,11 +275,9 @@ impl Db {
         match filter {
             PruneFilter::All => {
                 if dry_run {
-                    let n: i64 = self.conn.query_row(
-                        "SELECT COUNT(*) FROM invocations",
-                        [],
-                        |r| r.get(0),
-                    )?;
+                    let n: i64 =
+                        self.conn
+                            .query_row("SELECT COUNT(*) FROM invocations", [], |r| r.get(0))?;
                     Ok(n as u64)
                 } else {
                     let n = self.conn.execute("DELETE FROM invocations", [])?;
@@ -548,7 +546,7 @@ mod tests {
         let record = TrackRecord {
             original_cmd: "git status".to_string(),
             lowfat_cmd: "lowfat git status".to_string(),
-            raw: "a".repeat(100), // 25 tokens
+            raw: "a".repeat(100),     // 25 tokens
             filtered: "a".repeat(40), // 10 tokens
             exec_time_ms: 50,
             project_path: "/tmp/test".to_string(),
@@ -579,9 +577,11 @@ mod tests {
                 reduced: true,
                 is_external_plugin: false,
                 exit_code: 0,
-            }).unwrap();
+            })
+            .unwrap();
         }
-        let count: i64 = db.conn
+        let count: i64 = db
+            .conn
             .query_row("SELECT COUNT(*) FROM invocations", [], |r| r.get(0))
             .unwrap();
         assert_eq!(count, super::INVOCATIONS_CAP);
@@ -595,22 +595,32 @@ mod tests {
         // "cargo build": 5 × 2000 × 0.05 savings = score 500 (big but barely filtered)
         for _ in 0..5 {
             db.record_invocation(&InvocationRecord {
-                command: "cargo".into(), subcommand: "build".into(),
-                raw_tokens: 2000, filtered_tokens: 1900,
-                had_plugin: false, in_scope: false, reduced: true,
+                command: "cargo".into(),
+                subcommand: "build".into(),
+                raw_tokens: 2000,
+                filtered_tokens: 1900,
+                had_plugin: false,
+                in_scope: false,
+                reduced: true,
                 is_external_plugin: false,
                 exit_code: 0,
-            }).unwrap();
+            })
+            .unwrap();
         }
         // "git status": 10 × 30 × 0.9 savings = score 270 (small and well-filtered)
         for _ in 0..10 {
             db.record_invocation(&InvocationRecord {
-                command: "git".into(), subcommand: "status".into(),
-                raw_tokens: 30, filtered_tokens: 3,
-                had_plugin: true, in_scope: true, reduced: true,
+                command: "git".into(),
+                subcommand: "status".into(),
+                raw_tokens: 30,
+                filtered_tokens: 3,
+                had_plugin: true,
+                in_scope: true,
+                reduced: true,
                 is_external_plugin: false,
                 exit_code: 0,
-            }).unwrap();
+            })
+            .unwrap();
         }
 
         // show_all=true: keep tiny git-status group so we can still assert both rows.
@@ -823,7 +833,8 @@ mod tests {
                 filtered: "a".repeat(20),
                 exec_time_ms: 10,
                 project_path: "/tmp".to_string(),
-            }).unwrap();
+            })
+            .unwrap();
         }
 
         let top = db.top_commands(10).unwrap();

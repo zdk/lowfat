@@ -17,7 +17,10 @@ fn plugin_path() -> Result<PathBuf> {
             .context("cannot resolve config home (set $HOME or $XDG_CONFIG_HOME)")?
             .join(".config"),
     };
-    Ok(config_home.join("opencode").join("plugins").join("lowfat.ts"))
+    Ok(config_home
+        .join("opencode")
+        .join("plugins")
+        .join("lowfat.ts"))
 }
 
 fn home_dir() -> Option<PathBuf> {
@@ -31,8 +34,7 @@ fn home_dir() -> Option<PathBuf> {
 pub fn install() -> Result<()> {
     let path = plugin_path()?;
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)
-            .with_context(|| format!("create {}", parent.display()))?;
+        fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
     }
     fs::write(&path, PLUGIN_TS).with_context(|| format!("write {}", path.display()))?;
 

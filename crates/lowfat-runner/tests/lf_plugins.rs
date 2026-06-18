@@ -15,12 +15,7 @@ use std::process::{Command, Stdio};
 
 fn repo_root() -> PathBuf {
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    manifest
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .to_path_buf()
+    manifest.parent().unwrap().parent().unwrap().to_path_buf()
 }
 
 /// Run the .sh filter with env vars set the way the real lowfat runner
@@ -90,12 +85,7 @@ fn check_plugin(plugin_dir: &Path, tolerance_pct: f64) {
     let entries: Vec<_> = std::fs::read_dir(&samples)
         .unwrap()
         .filter_map(|e| e.ok())
-        .filter(|e| {
-            e.path()
-                .extension()
-                .map(|x| x == "txt")
-                .unwrap_or(false)
-        })
+        .filter(|e| e.path().extension().map(|x| x == "txt").unwrap_or(false))
         .collect();
     assert!(!entries.is_empty(), "no samples in {}", samples.display());
 
@@ -197,7 +187,10 @@ fn git_diff_truncation_marker_and_lite_uncapped() {
     );
 
     let lite = run_lf(&plugin.join("filter.lf"), &sample, "diff", Level::Lite);
-    assert!(!lite.contains("git-compact: truncated"), "lite must not cap");
+    assert!(
+        !lite.contains("git-compact: truncated"),
+        "lite must not cap"
+    );
 
     // every hunk header and changed line survives (--- / +++ are meta)
     let hunks = |s: &str| s.lines().filter(|l| l.starts_with("@@ ")).count();
@@ -217,7 +210,13 @@ fn git_diff_truncation_marker_and_lite_uncapped() {
     assert!(!lite.contains("\n--- a/"), "--- meta should be dropped");
 
     // sh baseline must agree
-    let sh_lite = run_sh(&plugin.join("filter.sh"), &sample, "git", "diff", Level::Lite);
+    let sh_lite = run_sh(
+        &plugin.join("filter.sh"),
+        &sample,
+        "git",
+        "diff",
+        Level::Lite,
+    );
     assert_eq!(sh_lite.lines().count(), lite.lines().count());
 }
 

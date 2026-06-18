@@ -113,8 +113,7 @@ commands = ["git"]
 
     #[test]
     fn resolve_entry_auto_detects() {
-        let dir = std::env::temp_dir()
-            .join(format!("lowfat-resolve-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("lowfat-resolve-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
 

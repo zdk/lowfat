@@ -67,7 +67,11 @@ fn prune(v: &Value, level: Level) -> Value {
     let (max_items, max_str) = caps(level);
     match v {
         Value::Array(items) => {
-            let mut out: Vec<Value> = items.iter().take(max_items).map(|x| prune(x, level)).collect();
+            let mut out: Vec<Value> = items
+                .iter()
+                .take(max_items)
+                .map(|x| prune(x, level))
+                .collect();
             if items.len() > max_items {
                 out.push(Value::String(format!(
                     "... {} more items (lowfat; LOWFAT_LEVEL=lite for more)",
@@ -76,9 +80,11 @@ fn prune(v: &Value, level: Level) -> Value {
             }
             Value::Array(out)
         }
-        Value::Object(map) => {
-            Value::Object(map.iter().map(|(k, x)| (k.clone(), prune(x, level))).collect())
-        }
+        Value::Object(map) => Value::Object(
+            map.iter()
+                .map(|(k, x)| (k.clone(), prune(x, level)))
+                .collect(),
+        ),
         Value::String(s) => {
             let n = s.chars().count();
             if n > max_str {
@@ -111,7 +117,10 @@ fn recompact(shape: &Shape, level: Level) -> Option<String> {
             lines.join("\n")
         }
         Shape::WithTrailer(v, trailer) => {
-            format!("{}\n{trailer}", serde_json::to_string(&prune(v, level)).ok()?)
+            format!(
+                "{}\n{trailer}",
+                serde_json::to_string(&prune(v, level)).ok()?
+            )
         }
     };
     Some(out)
@@ -143,7 +152,10 @@ mod tests {
     }
 
     fn ndjson(n: usize) -> String {
-        (0..n).map(|i| format!("{{\"id\":{i}}}")).collect::<Vec<_>>().join("\n")
+        (0..n)
+            .map(|i| format!("{{\"id\":{i}}}"))
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     #[test]

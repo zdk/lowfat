@@ -401,11 +401,17 @@ mod tests {
     use crate::detect;
 
     fn rust_lang() -> LangId {
-        LangId { name: "rust", spec: &detect::RUST }
+        LangId {
+            name: "rust",
+            spec: &detect::RUST,
+        }
     }
 
     fn python_lang() -> LangId {
-        LangId { name: "python", spec: &detect::PYTHON }
+        LangId {
+            name: "python",
+            spec: &detect::PYTHON,
+        }
     }
 
     #[test]
@@ -440,7 +446,10 @@ mod tests {
         let result = compress(input, &python_lang(), Level::Ultra);
         assert!(result.contains("def toposort(data):"), "got:\n{result}");
         assert!(result.contains("def other():"), "got:\n{result}");
-        assert!(!result.contains("Dependencies are expressed"), "docstring leaked:\n{result}");
+        assert!(
+            !result.contains("Dependencies are expressed"),
+            "docstring leaked:\n{result}"
+        );
         assert!(!result.contains("if len(data)"), "body leaked:\n{result}");
     }
 

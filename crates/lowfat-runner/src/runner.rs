@@ -29,11 +29,7 @@ impl HybridRunner {
                 .clone()
                 .unwrap_or_else(|| "0.0.0".to_string()),
             commands: manifest.plugin.commands.clone(),
-            subcommands: manifest
-                .plugin
-                .subcommands
-                .clone()
-                .unwrap_or_default(),
+            subcommands: manifest.plugin.subcommands.clone().unwrap_or_default(),
         };
 
         match &plugin.source {
@@ -49,10 +45,7 @@ impl HybridRunner {
                     anyhow::bail!("security check failed for '{}': {e}", manifest.plugin.name);
                 }
 
-                let is_lf = entry_path
-                    .extension()
-                    .map(|e| e == "lf")
-                    .unwrap_or(false);
+                let is_lf = entry_path.extension().map(|e| e == "lf").unwrap_or(false);
                 if is_lf {
                     let filter = LfFilter::load(info, entry_path)?;
                     Ok(Box::new(filter))
@@ -100,7 +93,13 @@ pub fn execute_pipeline(
 
         // Fall back to built-in processor
         if stage.stage_type == StageType::Builtin {
-            if let Some(processed) = apply_builtin(&stage.name, &text, input_template.level, stage.param, stage.pattern.as_deref()) {
+            if let Some(processed) = apply_builtin(
+                &stage.name,
+                &text,
+                input_template.level,
+                stage.param,
+                stage.pattern.as_deref(),
+            ) {
                 text = processed;
             }
         }
@@ -120,9 +119,7 @@ pub fn execute_pipeline(
 
 /// Execute a command and capture its output.
 pub fn exec_command(cmd: &str, args: &[String]) -> Result<(String, i32)> {
-    let output = std::process::Command::new(cmd)
-        .args(args)
-        .output()?;
+    let output = std::process::Command::new(cmd).args(args).output()?;
 
     let exit_code = output.status.code().unwrap_or(1);
     let mut combined = String::from_utf8_lossy(&output.stdout).to_string();
@@ -161,7 +158,7 @@ mod tests {
         let raw = "\x1b[31mERROR\x1b[0m\n\n\n\nline2";
         let input = make_input(raw);
         let result = execute_pipeline(&pipeline, raw, &input, &HashMap::new()).unwrap();
-        assert_eq!(result, "ERROR\n\nline2\n");  // normalize collapses blanks + trims
+        assert_eq!(result, "ERROR\n\nline2\n"); // normalize collapses blanks + trims
     }
 
     #[test]
@@ -170,13 +167,16 @@ mod tests {
         let raw = "hello world";
         let input = make_input(raw);
         let result = execute_pipeline(&pipeline, raw, &input, &HashMap::new()).unwrap();
-        assert_eq!(result, "hello world\n");  // normalize ensures trailing newline
+        assert_eq!(result, "hello world\n"); // normalize ensures trailing newline
     }
 
     #[test]
     fn execute_truncate_pipeline() {
         let pipeline = Pipeline::parse("head");
-        let raw = (0..100).map(|i| format!("line{i}")).collect::<Vec<_>>().join("\n");
+        let raw = (0..100)
+            .map(|i| format!("line{i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
         let input = make_input(&raw);
         let result = execute_pipeline(&pipeline, &raw, &input, &HashMap::new()).unwrap();
         // Full level head limit for base 40 = 40 lines
@@ -207,7 +207,10 @@ mod tests {
         let pipeline = Pipeline::parse("head");
         let input = make_input(&raw);
         let result = execute_pipeline(&pipeline, &raw, &input, &HashMap::new()).unwrap();
-        assert!(serde_json::from_str::<serde_json::Value>(&result).is_ok(), "broken JSON: {result}");
+        assert!(
+            serde_json::from_str::<serde_json::Value>(&result).is_ok(),
+            "broken JSON: {result}"
+        );
         assert!(result.contains("more items"));
     }
 

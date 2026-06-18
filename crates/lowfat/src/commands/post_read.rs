@@ -15,8 +15,7 @@ pub fn run() -> Result<()> {
 }
 
 fn process_payload(input: &str) -> Result<()> {
-    let payload: Value =
-        serde_json::from_str(input).context("Failed to parse PostToolUse JSON")?;
+    let payload: Value = serde_json::from_str(input).context("Failed to parse PostToolUse JSON")?;
 
     // Read tool delivers content as a structured object:
     //   tool_response: { type: "text", file: { content, numLines, totalLines, ... } }
@@ -100,7 +99,12 @@ mod tests {
         // and that real-shaped lock content is handled. Shape correctness is covered
         // by the field paths in process_payload (tool_response.file.content).
         let lock_content = (0..50)
-            .map(|i| format!("[[package]]\nname = \"pkg-{}\"\nversion = \"1.0.{}\"\n", i, i))
+            .map(|i| {
+                format!(
+                    "[[package]]\nname = \"pkg-{}\"\nversion = \"1.0.{}\"\n",
+                    i, i
+                )
+            })
             .collect::<String>();
         let payload = make_payload("Cargo.lock", &lock_content);
         assert!(process_payload(&payload).is_ok());
@@ -117,7 +121,12 @@ mod tests {
     fn lock_file_compresses() {
         // Lock files get extreme summarization — guaranteed >10% savings
         let lock_content = (0..50)
-            .map(|i| format!("[[package]]\nname = \"pkg-{}\"\nversion = \"1.0.{}\"\n", i, i))
+            .map(|i| {
+                format!(
+                    "[[package]]\nname = \"pkg-{}\"\nversion = \"1.0.{}\"\n",
+                    i, i
+                )
+            })
             .collect::<String>();
         let payload = make_payload("Cargo.lock", &lock_content);
         assert!(process_payload(&payload).is_ok());

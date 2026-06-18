@@ -14,19 +14,14 @@ static STYLE_BLOCK: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?s)<style[^>]*>.*?</style>").unwrap());
 static SCRIPT_BLOCK: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?s)<script[^>]*>.*?</script>").unwrap());
-static HTML_COMMENT: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?s)<!--.*?-->").unwrap());
-static INLINE_STYLE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"\s+style="[^"]*""#).unwrap());
+static HTML_COMMENT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?s)<!--.*?-->").unwrap());
+static INLINE_STYLE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"\s+style="[^"]*""#).unwrap());
 static CLASS_ATTR: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"\s+(class|id|data-[\w-]+)="[^"]*""#).unwrap());
 // Only match real tags (start with letter/!/?), so prose like "a < b and c > d" survives.
-static ALL_TAGS: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"</?[a-zA-Z!?][^>]*>").unwrap());
-static MULTI_SPACE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"[ \t]{2,}").unwrap());
-static MULTI_BLANK: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\n{3,}").unwrap());
+static ALL_TAGS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"</?[a-zA-Z!?][^>]*>").unwrap());
+static MULTI_SPACE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[ \t]{2,}").unwrap());
+static MULTI_BLANK: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\n{3,}").unwrap());
 
 pub fn compress(content: &str, level: Level) -> String {
     match level {
@@ -80,7 +75,8 @@ mod tests {
 
     #[test]
     fn strips_class_attributes() {
-        let input = r#"<div class="container mx-auto" id="main" data-testid="root"><p>Text</p></div>"#;
+        let input =
+            r#"<div class="container mx-auto" id="main" data-testid="root"><p>Text</p></div>"#;
         let result = compress(input, Level::Full);
         assert!(!result.contains("container"));
         assert!(!result.contains("data-testid"));

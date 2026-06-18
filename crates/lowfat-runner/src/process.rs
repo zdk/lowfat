@@ -82,7 +82,8 @@ mod tests {
     }
 
     fn make_filter(entry: &str, code: &str) -> ProcessFilter {
-        let dir = std::env::temp_dir().join(format!("lowfat-test-{}-{}", entry, std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("lowfat-test-{}-{}", entry, std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join(entry);
         let mut f = std::fs::File::create(&path).unwrap();

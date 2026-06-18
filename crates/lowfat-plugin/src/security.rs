@@ -78,9 +78,21 @@ fn validate_hooks(manifest: &PluginManifest) -> Result<(), SecurityError> {
     ];
 
     let hooks = [
-        ("on_install", manifest.hooks.as_ref().and_then(|h| h.on_install.as_deref())),
-        ("on_update", manifest.hooks.as_ref().and_then(|h| h.on_update.as_deref())),
-        ("on_remove", manifest.hooks.as_ref().and_then(|h| h.on_remove.as_deref())),
+        (
+            "on_install",
+            manifest
+                .hooks
+                .as_ref()
+                .and_then(|h| h.on_install.as_deref()),
+        ),
+        (
+            "on_update",
+            manifest.hooks.as_ref().and_then(|h| h.on_update.as_deref()),
+        ),
+        (
+            "on_remove",
+            manifest.hooks.as_ref().and_then(|h| h.on_remove.as_deref()),
+        ),
     ];
 
     for (hook_name, hook_cmd) in &hooks {
@@ -147,11 +159,31 @@ pub fn untrust_plugin(plugin_name: &str, lowfat_home: &Path) -> anyhow::Result<(
 // --- Environment sanitization ---
 
 const SAFE_ENV_VARS: &[&str] = &[
-    "LOWFAT_LEVEL", "LOWFAT_COMMAND", "LOWFAT_SUBCOMMAND", "LOWFAT_EXIT_CODE",
-    "PATH", "HOME", "USER", "SHELL", "LANG", "LC_ALL", "LC_CTYPE", "TERM", "TMPDIR",
-    "GIT_DIR", "GIT_WORK_TREE", "DOCKER_HOST", "KUBECONFIG",
-    "GOPATH", "GOROOT", "CARGO_HOME", "RUSTUP_HOME",
-    "NODE_PATH", "NPM_CONFIG_PREFIX", "VIRTUAL_ENV", "PYTHONPATH",
+    "LOWFAT_LEVEL",
+    "LOWFAT_COMMAND",
+    "LOWFAT_SUBCOMMAND",
+    "LOWFAT_EXIT_CODE",
+    "PATH",
+    "HOME",
+    "USER",
+    "SHELL",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "TERM",
+    "TMPDIR",
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "DOCKER_HOST",
+    "KUBECONFIG",
+    "GOPATH",
+    "GOROOT",
+    "CARGO_HOME",
+    "RUSTUP_HOME",
+    "NODE_PATH",
+    "NPM_CONFIG_PREFIX",
+    "VIRTUAL_ENV",
+    "PYTHONPATH",
 ];
 
 pub fn sanitized_env() -> Vec<(String, String)> {

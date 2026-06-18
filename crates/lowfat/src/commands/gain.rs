@@ -66,10 +66,7 @@ pub fn run() -> Result<()> {
 
     // Summary stats
     let color = savings_color(summary.savings_pct);
-    println!(
-        "  {DIM}commands{RESET}  {BOLD}{}{RESET}",
-        summary.commands,
-    );
+    println!("  {DIM}commands{RESET}  {BOLD}{}{RESET}", summary.commands,);
     println!(
         "  {DIM}input{RESET}    {BOLD}{}{RESET} {DIM}tokens{RESET}",
         fmt_tokens(summary.input_tokens),
@@ -88,9 +85,7 @@ pub fn run() -> Result<()> {
         "           {}",
         bar(summary.input_tokens, summary.output_tokens, 30)
     );
-    println!(
-        "           {GREEN}█ saved{RESET}  {CYAN}░ kept{RESET}"
-    );
+    println!("           {GREEN}█ saved{RESET}  {CYAN}░ kept{RESET}");
     println!();
 
     // Top commands

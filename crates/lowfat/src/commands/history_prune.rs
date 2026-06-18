@@ -20,7 +20,11 @@ pub fn run(opts: PruneOpts) -> Result<()> {
     let db = Db::open(&config.data_dir)?;
     let affected = db.prune_invocations(&filter, opts.dry_run)?;
 
-    let verb = if opts.dry_run { "would remove" } else { "removed" };
+    let verb = if opts.dry_run {
+        "would remove"
+    } else {
+        "removed"
+    };
     println!(
         "lowfat: {verb} {affected} invocation row{s} ({desc})",
         s = if affected == 1 { "" } else { "s" },

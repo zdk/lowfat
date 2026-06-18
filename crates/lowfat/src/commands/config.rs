@@ -26,14 +26,28 @@ pub fn run() -> Result<()> {
     } else {
         let mut disabled: Vec<_> = config.disabled.iter().collect();
         disabled.sort();
-        println!("  {D}disable:{R} {}", disabled.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", "));
+        println!(
+            "  {D}disable:{R} {}",
+            disabled
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
     }
 
     // Whitelist
     if let Some(ref allowed) = config.allowed {
         let mut filters: Vec<_> = allowed.iter().collect();
         filters.sort();
-        println!("  {D}filters:{R} {}", filters.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", "));
+        println!(
+            "  {D}filters:{R} {}",
+            filters
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
     }
 
     // Pipelines
@@ -78,7 +92,11 @@ pub fn run() -> Result<()> {
                 // Validate level value
                 if let Some(val) = line.strip_prefix("level=") {
                     if !matches!(val, "lite" | "full" | "ultra") {
-                        warnings.push(format!("line {}: invalid level '{}' (expected: lite, full, ultra)", i + 1, val));
+                        warnings.push(format!(
+                            "line {}: invalid level '{}' (expected: lite, full, ultra)",
+                            i + 1,
+                            val
+                        ));
                     }
                 }
                 // Validate pipeline has = and a spec
@@ -90,11 +108,33 @@ pub fn run() -> Result<()> {
                             warnings.push(format!("line {}: pipeline missing command name", i + 1));
                         }
                         if spec.is_empty() {
-                            warnings.push(format!("line {}: pipeline.{} has empty spec", i + 1, key));
+                            warnings.push(format!(
+                                "line {}: pipeline.{} has empty spec",
+                                i + 1,
+                                key
+                            ));
                         }
                         // Check condition suffix
                         if let Some((_, cond)) = key.split_once('.') {
-                            if !matches!(cond, "error" | "empty" | "large" | "diff" | "status" | "log" | "show" | "build" | "test" | "check" | "clippy" | "run" | "install" | "audit" | "ps" | "images") {
+                            if !matches!(
+                                cond,
+                                "error"
+                                    | "empty"
+                                    | "large"
+                                    | "diff"
+                                    | "status"
+                                    | "log"
+                                    | "show"
+                                    | "build"
+                                    | "test"
+                                    | "check"
+                                    | "clippy"
+                                    | "run"
+                                    | "install"
+                                    | "audit"
+                                    | "ps"
+                                    | "images"
+                            ) {
                                 // Only warn for known condition suffixes that look wrong
                                 // This is a heuristic — subcommand names are open-ended
                             }

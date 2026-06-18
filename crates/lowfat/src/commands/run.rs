@@ -79,8 +79,15 @@ pub fn run(args: &[String]) -> i32 {
     );
     let filter_name = resolved.as_ref().map(|(name, _)| name.clone());
     let is_external_plugin = resolved.map(|(_, ext)| ext).unwrap_or(false);
-    let pipeline = resolve_pipeline(cmd, exit_code, &raw, &config, &filter_name,
-        &external_plugins, &external_map);
+    let pipeline = resolve_pipeline(
+        cmd,
+        exit_code,
+        &raw,
+        &config,
+        &filter_name,
+        &external_plugins,
+        &external_map,
+    );
 
     // Build plugin map for pipeline execution: builtins + loaded community plugins
     let mut plugin_map: HashMap<String, Box<dyn FilterPlugin>> = all_filters;
@@ -95,10 +102,10 @@ pub fn run(args: &[String]) -> i32 {
         }
     }
     for stage in &pipeline.stages {
-        if stage.stage_type == StageType::Plugin
-            && !plugin_map.contains_key(&stage.name)
-        {
-            if let Some(loaded) = load_external_plugin(&stage.name, &external_plugins, &external_map) {
+        if stage.stage_type == StageType::Plugin && !plugin_map.contains_key(&stage.name) {
+            if let Some(loaded) =
+                load_external_plugin(&stage.name, &external_plugins, &external_map)
+            {
                 plugin_map.insert(stage.name.clone(), loaded);
             }
         }
@@ -140,8 +147,8 @@ pub fn run(args: &[String]) -> i32 {
         let known = known_subcommands(cmd, &plugin_map, &external_plugins, &external_map);
         // in_scope = plugin is declared to handle *this* subcommand. Empty
         // `known` means "no subcommand restriction" — treat as universal.
-        let in_scope = filter_name.is_some()
-            && (known.is_empty() || known.iter().any(|s| s == &subcommand));
+        let in_scope =
+            filter_name.is_some() && (known.is_empty() || known.iter().any(|s| s == &subcommand));
         let raw_tokens = lowfat_core::tokens::estimate_tokens(&raw) as u64;
         let filtered_tokens = lowfat_core::tokens::estimate_tokens(&filtered) as u64;
         let _ = db.record_invocation(&InvocationRecord {
@@ -207,7 +214,8 @@ fn resolve_pipeline(
     plugins: &[DiscoveredPlugin],
     cmd_map: &HashMap<String, usize>,
 ) -> Pipeline {
-    let mut base = resolve_base_pipeline(cmd, exit_code, raw, config, filter_name, plugins, cmd_map);
+    let mut base =
+        resolve_base_pipeline(cmd, exit_code, raw, config, filter_name, plugins, cmd_map);
 
     // Prepend `pipeline.* = ...` stages. The `cmd != "*"` guard is paranoia
     // for someone literally running a command named `*`.
@@ -429,7 +437,10 @@ mod tests {
                 Some((c, cond)) => (c.to_string(), cond.to_string()),
                 None => (key.to_string(), String::new()),
             };
-            by_cmd.entry(cmd).or_default().push((cond, spec.to_string()));
+            by_cmd
+                .entry(cmd)
+                .or_default()
+                .push((cond, spec.to_string()));
         }
         for (cmd, ls) in by_cmd {
             pipelines.insert(cmd, parse_conditional_pipeline(&ls));

@@ -14,10 +14,8 @@ pub struct LfFilter {
 
 impl LfFilter {
     pub fn load(info: PluginInfo, entry: PathBuf) -> Result<Self> {
-        let source = std::fs::read_to_string(&entry)
-            .with_context(|| format!("reading {}", entry.display()))?;
-        let ruleset =
-            lf::parse(&source).with_context(|| format!("parsing {}", entry.display()))?;
+        // `lf::load` resolves any `include` directives relative to `entry`.
+        let ruleset = lf::load(&entry).with_context(|| format!("parsing {}", entry.display()))?;
         Ok(Self {
             info,
             ruleset,
@@ -29,8 +27,7 @@ impl LfFilter {
     /// the source string lives in `.rodata` and never touches disk. `entry`
     /// is a synthetic display-only path for error messages.
     pub fn from_source(info: PluginInfo, source: &str, entry: PathBuf) -> Result<Self> {
-        let ruleset =
-            lf::parse(source).with_context(|| format!("parsing {}", entry.display()))?;
+        let ruleset = lf::parse(source).with_context(|| format!("parsing {}", entry.display()))?;
         Ok(Self {
             info,
             ruleset,
@@ -88,10 +85,8 @@ mod tests {
     }
 
     fn write_lf(name: &str, body: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "lowfat-lf-test-{name}-{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("lowfat-lf-test-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("filter.lf");

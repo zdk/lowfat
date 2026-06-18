@@ -1,4 +1,4 @@
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use lowfat_core::level::Level;
 use lowfat_core::lf::{self, ExecCtx, ExplainTrace, RuleSet};
 use lowfat_core::tokens::estimate_tokens;
@@ -20,9 +20,8 @@ pub fn run(
     exit_code: i32,
     explain: bool,
 ) -> Result<()> {
-    let source = std::fs::read_to_string(path)
-        .with_context(|| format!("reading {path}"))?;
-    let rs = lf::parse(&source).with_context(|| format!("parsing {path}"))?;
+    // `lf::load` reads the file and resolves any `include` directives.
+    let rs = lf::load(std::path::Path::new(path)).with_context(|| format!("parsing {path}"))?;
     let level: Level = level_str
         .parse()
         .map_err(|e: String| anyhow!("invalid --level: {e}"))?;
@@ -45,14 +44,13 @@ pub fn run(
     };
 
     if explain {
-        let (out, trace) = lf::execute_explain(&rs, &ctx, &input)
-            .with_context(|| format!("executing {path}"))?;
+        let (out, trace) =
+            lf::execute_explain(&rs, &ctx, &input).with_context(|| format!("executing {path}"))?;
         print_explain(&rs, &ctx, &trace, &input, &out);
         let mut stdout = std::io::stdout();
         stdout.write_all(out.as_bytes())?;
     } else {
-        let out = lf::execute(&rs, &ctx, &input)
-            .with_context(|| format!("executing {path}"))?;
+        let out = lf::execute(&rs, &ctx, &input).with_context(|| format!("executing {path}"))?;
         let mut stdout = std::io::stdout();
         stdout.write_all(out.as_bytes())?;
     }

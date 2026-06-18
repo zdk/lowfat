@@ -30,9 +30,7 @@ pub fn save_on_failure(tee_dir: &Path, label: &str, raw: &str, exit_code: i32) {
             .filter(|e| e.path().is_file())
             .collect();
         if files.len() > 20 {
-            files.sort_by_key(|e| {
-                e.metadata().ok().and_then(|m| m.modified().ok())
-            });
+            files.sort_by_key(|e| e.metadata().ok().and_then(|m| m.modified().ok()));
             for entry in &files[..files.len() - 20] {
                 let _ = fs::remove_file(entry.path());
             }

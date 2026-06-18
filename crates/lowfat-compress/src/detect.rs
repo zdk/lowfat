@@ -57,9 +57,7 @@ pub(crate) static PYTHON: LangSpec = LangSpec {
     block_comment: Some(("\"\"\"", "\"\"\"")),
     doc_comment: Some("\"\"\""),
     scope: ScopeStyle::Indentation,
-    signature_patterns: &[
-        r"^\s*(async\s+)?(def|class)\s+",
-    ],
+    signature_patterns: &[r"^\s*(async\s+)?(def|class)\s+"],
     import_patterns: &[r"^\s*(import|from)\s+"],
 };
 
@@ -68,9 +66,7 @@ static GO: LangSpec = LangSpec {
     block_comment: Some(("/*", "*/")),
     doc_comment: Some("//"),
     scope: ScopeStyle::Braces,
-    signature_patterns: &[
-        r"^\s*(func|type|var|const)\s+",
-    ],
+    signature_patterns: &[r"^\s*(func|type|var|const)\s+"],
     import_patterns: &[r"^\s*import\s+"],
 };
 
@@ -90,10 +86,7 @@ static SHELL: LangSpec = LangSpec {
     block_comment: None,
     doc_comment: None,
     scope: ScopeStyle::None,
-    signature_patterns: &[
-        r"^\s*\w+\s*\(\)\s*\{",
-        r"^\s*function\s+\w+",
-    ],
+    signature_patterns: &[r"^\s*\w+\s*\(\)\s*\{", r"^\s*function\s+\w+"],
     import_patterns: &[r"^\s*(\.|source)\s+"],
 };
 
@@ -126,9 +119,7 @@ static RUBY: LangSpec = LangSpec {
     block_comment: Some(("=begin", "=end")),
     doc_comment: None,
     scope: ScopeStyle::DoEnd,
-    signature_patterns: &[
-        r"^\s*(def|class|module)\s+",
-    ],
+    signature_patterns: &[r"^\s*(def|class|module)\s+"],
     import_patterns: &[r"^\s*require\s+"],
 };
 
@@ -165,19 +156,58 @@ pub fn detect(file_path: &str, _content: &str) -> ContentType {
 
     match ext.as_str() {
         // Code
-        "rs" => ContentType::Code(LangId { name: "rust", spec: &RUST }),
-        "py" | "pyw" | "pyi" => ContentType::Code(LangId { name: "python", spec: &PYTHON }),
-        "go" => ContentType::Code(LangId { name: "go", spec: &GO }),
-        "ex" | "exs" => ContentType::Code(LangId { name: "elixir", spec: &ELIXIR }),
-        "sh" | "bash" | "zsh" | "fish" => ContentType::Code(LangId { name: "shell", spec: &SHELL }),
-        "js" | "jsx" | "mjs" | "cjs" => ContentType::Code(LangId { name: "javascript", spec: &JAVASCRIPT }),
-        "ts" | "tsx" | "mts" | "cts" => ContentType::Code(LangId { name: "typescript", spec: &JAVASCRIPT }),
-        "java" | "kt" | "kts" => ContentType::Code(LangId { name: "java", spec: &JAVA }),
-        "rb" => ContentType::Code(LangId { name: "ruby", spec: &RUBY }),
-        "c" | "h" => ContentType::Code(LangId { name: "c", spec: &C_LANG }),
-        "cpp" | "cc" | "cxx" | "hpp" | "hh" => ContentType::Code(LangId { name: "cpp", spec: &C_LANG }),
-        "swift" => ContentType::Code(LangId { name: "swift", spec: &C_LANG }),
-        "cs" => ContentType::Code(LangId { name: "csharp", spec: &C_LANG }),
+        "rs" => ContentType::Code(LangId {
+            name: "rust",
+            spec: &RUST,
+        }),
+        "py" | "pyw" | "pyi" => ContentType::Code(LangId {
+            name: "python",
+            spec: &PYTHON,
+        }),
+        "go" => ContentType::Code(LangId {
+            name: "go",
+            spec: &GO,
+        }),
+        "ex" | "exs" => ContentType::Code(LangId {
+            name: "elixir",
+            spec: &ELIXIR,
+        }),
+        "sh" | "bash" | "zsh" | "fish" => ContentType::Code(LangId {
+            name: "shell",
+            spec: &SHELL,
+        }),
+        "js" | "jsx" | "mjs" | "cjs" => ContentType::Code(LangId {
+            name: "javascript",
+            spec: &JAVASCRIPT,
+        }),
+        "ts" | "tsx" | "mts" | "cts" => ContentType::Code(LangId {
+            name: "typescript",
+            spec: &JAVASCRIPT,
+        }),
+        "java" | "kt" | "kts" => ContentType::Code(LangId {
+            name: "java",
+            spec: &JAVA,
+        }),
+        "rb" => ContentType::Code(LangId {
+            name: "ruby",
+            spec: &RUBY,
+        }),
+        "c" | "h" => ContentType::Code(LangId {
+            name: "c",
+            spec: &C_LANG,
+        }),
+        "cpp" | "cc" | "cxx" | "hpp" | "hh" => ContentType::Code(LangId {
+            name: "cpp",
+            spec: &C_LANG,
+        }),
+        "swift" => ContentType::Code(LangId {
+            name: "swift",
+            spec: &C_LANG,
+        }),
+        "cs" => ContentType::Code(LangId {
+            name: "csharp",
+            spec: &C_LANG,
+        }),
 
         // Markdown
         "md" | "markdown" | "mdx" => ContentType::Markdown,

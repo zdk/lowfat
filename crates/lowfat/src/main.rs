@@ -227,12 +227,8 @@ fn main() {
 
     let result = match cli.command {
         // ── new consolidated inspection commands ─────────────────
-        Some(Commands::Info { cmd, config }) => {
-            commands::info::run(cmd.as_deref(), config)
-        }
-        Some(Commands::Stats { audit, audit_limit }) => {
-            commands::stats::run(audit, audit_limit)
-        }
+        Some(Commands::Info { cmd, config }) => commands::info::run(cmd.as_deref(), config),
+        Some(Commands::Stats { audit, audit_limit }) => commands::stats::run(audit, audit_limit),
 
         // ── kept ─────────────────────────────────────────────────
         Some(Commands::History { limit, all, action }) => match action {
@@ -287,7 +283,9 @@ fn main() {
         Some(Commands::Config) => commands::info::run(None, true),
         Some(Commands::Status) => commands::info::run(None, false),
         Some(Commands::Pipeline { cmd }) => commands::info::run(Some(&cmd), false),
-        Some(Commands::Filters { commands: cmds_only }) => {
+        Some(Commands::Filters {
+            commands: cmds_only,
+        }) => {
             // `--commands` is consumed by shell-init scripts; preserve its
             // raw one-per-line output. Bare form is just a view of `info`.
             if cmds_only {
