@@ -290,6 +290,15 @@ fn collect_includes(lines: &[Line]) -> Result<Vec<IncludeDirective>> {
         if path.is_empty() {
             bail!("line {}: `include` needs a path", l.line_no);
         }
+        // Paths resolve relative to the including file; an absolute path would
+        // ignore that base and escape the plugin tree, so reject it up front.
+        if Path::new(path).is_absolute() {
+            bail!(
+                "line {}: `include` path must be relative, got `{}`",
+                l.line_no,
+                path
+            );
+        }
         out.push(IncludeDirective {
             path: path.to_string(),
             line_no: l.line_no,
@@ -2998,6 +3007,14 @@ plan:
         write(d.path(), "lib.lf", "define trim:\n    head 5\n");
         let root = write(d.path(), "main.lf", "include \"lib.lf\"\n*:\n    trim\n");
         assert!(load(&root).unwrap().find_define("trim").is_some());
+    }
+
+    #[test]
+    fn absolute_include_path_rejected() {
+        let d = tempfile::tempdir().unwrap();
+        let root = write(d.path(), "main.lf", "include /etc/passwd.lf\n*:\n    head 1\n");
+        let err = format!("{:#}", load(&root).unwrap_err());
+        assert!(err.contains("must be relative"), "got: {err}");
     }
 
     #[test]
