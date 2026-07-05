@@ -1,4 +1,5 @@
 use crate::filters;
+use crate::observatory::{log_savings_if_enabled, SavingsData};
 use lowfat_core::config::RunfConfig;
 use lowfat_core::db::{Db, InvocationRecord, TrackRecord};
 use lowfat_core::pipeline::{Pipeline, StageType};
@@ -51,12 +52,13 @@ pub fn run(args: &[String]) -> i32 {
     // Skip filtering for tiny outputs — overhead exceeds any possible savings.
     const MIN_FILTER_TOKENS: usize = 128;
     if lowfat_core::tokens::estimate_tokens(&raw) < MIN_FILTER_TOKENS {
+        let tokens = lowfat_core::tokens::estimate_tokens(&raw) as u64;
         if let Ok(db) = Db::open(&config.data_dir) {
             let _ = db.record_invocation(&InvocationRecord {
                 command: cmd.clone(),
                 subcommand: subcommand.clone(),
-                raw_tokens: lowfat_core::tokens::estimate_tokens(&raw) as u64,
-                filtered_tokens: lowfat_core::tokens::estimate_tokens(&raw) as u64,
+                raw_tokens: tokens,
+                filtered_tokens: tokens,
                 had_plugin: false,
                 in_scope: false,
                 reduced: false,
@@ -64,6 +66,19 @@ pub fn run(args: &[String]) -> i32 {
                 exit_code,
             });
         }
+        log_savings_if_enabled(
+            &config.data_dir,
+            SavingsData {
+                command: cmd.clone(),
+                subcommand: subcommand.clone(),
+                raw_tokens: tokens,
+                filtered_tokens: tokens,
+                had_plugin: false,
+                reduced: false,
+                exit_code,
+                exec_time_ms: None,
+            },
+        );
         print!("{raw}");
         return exit_code;
     }
@@ -129,6 +144,17 @@ pub fn run(args: &[String]) -> i32 {
 
     let elapsed = start.elapsed().as_millis() as u64;
 
+    // Compute usage history values outside the DB block so they are also
+    // available for the optional remote observatory log.
+    let known = known_subcommands(cmd, &plugin_map, &external_plugins, &external_map);
+    let raw_tokens = lowfat_core::tokens::estimate_tokens(&raw) as u64;
+    let filtered_tokens = lowfat_core::tokens::estimate_tokens(&filtered) as u64;
+    let in_scope =
+        filter_name.is_some() && (known.is_empty() || known.iter().any(|s| s == &subcommand));
+    let had_plugin = filter_name.is_some();
+    let reduced = filtered_tokens < raw_tokens;
+    let hist_sub = history_subcommand(&subcommand, &known);
+
     // Track
     if let Ok(db) = Db::open(&config.data_dir) {
         let args_str = cmd_args.join(" ");
@@ -143,26 +169,33 @@ pub fn run(args: &[String]) -> i32 {
                 .map(|p| p.to_string_lossy().to_string())
                 .unwrap_or_default(),
         });
-        // Usage history — command+subcommand only, no args. Powers `lowfat history`.
-        let known = known_subcommands(cmd, &plugin_map, &external_plugins, &external_map);
-        // in_scope = plugin is declared to handle *this* subcommand. Empty
-        // `known` means "no subcommand restriction" — treat as universal.
-        let in_scope =
-            filter_name.is_some() && (known.is_empty() || known.iter().any(|s| s == &subcommand));
-        let raw_tokens = lowfat_core::tokens::estimate_tokens(&raw) as u64;
-        let filtered_tokens = lowfat_core::tokens::estimate_tokens(&filtered) as u64;
         let _ = db.record_invocation(&InvocationRecord {
             command: cmd.clone(),
-            subcommand: history_subcommand(&subcommand, &known),
+            subcommand: hist_sub.clone(),
             raw_tokens,
             filtered_tokens,
-            had_plugin: filter_name.is_some(),
+            had_plugin,
             in_scope,
-            reduced: filtered_tokens < raw_tokens,
+            reduced,
             is_external_plugin,
             exit_code,
         });
     }
+
+    // Remote observatory (best-effort, non-blocking)
+    log_savings_if_enabled(
+        &config.data_dir,
+        SavingsData {
+            command: cmd.clone(),
+            subcommand: hist_sub,
+            raw_tokens,
+            filtered_tokens,
+            had_plugin,
+            reduced,
+            exit_code,
+            exec_time_ms: Some(elapsed),
+        },
+    );
 
     // Tee on failure
     let tee_dir = config.data_dir.join("tee");
@@ -362,6 +395,8 @@ fn passthrough(cmd: &str, args: &[String], config: &RunfConfig) -> i32 {
     };
 
     let elapsed = start.elapsed().as_millis() as u64;
+    let subcommand = args.first().cloned().unwrap_or_default();
+    let tokens = lowfat_core::tokens::estimate_tokens(&raw) as u64;
 
     if let Ok(db) = Db::open(&config.data_dir) {
         let args_str = args.join(" ");
@@ -375,8 +410,6 @@ fn passthrough(cmd: &str, args: &[String], config: &RunfConfig) -> i32 {
                 .map(|p| p.to_string_lossy().to_string())
                 .unwrap_or_default(),
         });
-        let subcommand = args.first().cloned().unwrap_or_default();
-        let tokens = lowfat_core::tokens::estimate_tokens(&raw) as u64;
         let _ = db.record_invocation(&InvocationRecord {
             command: cmd.to_string(),
             subcommand: history_subcommand(&subcommand, &[]),
@@ -389,6 +422,21 @@ fn passthrough(cmd: &str, args: &[String], config: &RunfConfig) -> i32 {
             exit_code,
         });
     }
+
+    // Remote observatory (best-effort, non-blocking)
+    log_savings_if_enabled(
+        &config.data_dir,
+        SavingsData {
+            command: cmd.to_string(),
+            subcommand: history_subcommand(&subcommand, &[]),
+            raw_tokens: tokens,
+            filtered_tokens: tokens,
+            had_plugin: false,
+            reduced: false,
+            exit_code,
+            exec_time_ms: Some(elapsed),
+        },
+    );
 
     print!("{raw}");
     exit_code

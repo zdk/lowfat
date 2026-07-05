@@ -1,5 +1,6 @@
 mod commands;
 mod filters;
+mod observatory;
 
 use clap::{Parser, Subcommand};
 
