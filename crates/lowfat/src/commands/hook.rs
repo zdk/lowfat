@@ -28,14 +28,16 @@ pub fn run() -> Result<()> {
         None => return Ok(()),
     };
 
+    let mut updated_input = json!({ "command": rewritten });
+    if let Some(description) = payload["tool_input"]["description"].as_str() {
+        updated_input["description"] = json!(description);
+    }
+
     let output = json!({
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
             "permissionDecision": "allow",
-            "updatedInput": {
-                "command": rewritten,
-                "description": payload["tool_input"]["description"]
-            }
+            "updatedInput": updated_input
         }
     });
 
