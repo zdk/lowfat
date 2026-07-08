@@ -37,6 +37,10 @@ pub fn run() -> Result<()> {
     println!();
     println!("  {Y}💰{R} {D}saved:{R} {B}{input}{R} {D}→{R} {G}{B}{output}{R} {D}tokens{R}");
     println!("  {Y}⚡{R} {D}speed:{R} {B}{time_without:.1}s{R} {D}→{R} {G}{B}{time_s:.1}s{R}");
+
+    if crate::observatory::enabled() {
+        println!("  {D}🌐 observatory:{R} {G}on{R}");
+    }
     println!();
 
     Ok(())

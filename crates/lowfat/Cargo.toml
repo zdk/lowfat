@@ -20,3 +20,4 @@ clap = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tempfile = "3"
+ureq = { version = "2", default-features = false, features = ["json", "tls"] }

@@ -139,6 +139,38 @@ lowfat ls -la
 { "shellCommandPrefix": "eval \"$(lowfat shell-init zsh)\"; " }
 ```
 
+**Codex, Grok Build, Antigravity** — direct prefixing works in all:
+
+```sh
+lowfat git status
+lowfat docker ps
+```
+
+Shell integration auto-activates for Codex when `CODEX_ENV` is set (or force with `LOWFAT_ENABLE=1`).
+
+Non-interactive runs often need bypass/approval flags:
+
+- Codex: `codex exec --dangerously-bypass-approvals-and-sandbox ...`
+- Grok Build: `grok --single --always-approve --permission-mode bypassPermissions ...`
+
+Antigravity (`agy`) supports direct prefixing inside sessions; non-interactive terminal execution is inconsistent.
+
+**Discoverability skills** are installed for autonomous agent use:
+
+- Claude Code: `~/.claude/skills/lowfat/SKILL.md`
+- Codex: `~/.codex/skills/lowfat/SKILL.md`
+- .agents / Devin-style: `~/.agents/skills/lowfat/SKILL.md`
+- Antigravity (Google): `~/.gemini/config/plugins/google-antigravity-sdk/skills/lowfat/SKILL.md`
+
+**Tested agents (one-shot verification)**
+
+| Assistant     | Result   | Notes |
+|---------------|----------|-------|
+| Claude Code   | PASS     | Pre-existing hooks; clean `--print` execution |
+| Codex         | PASS     | Used bypass flags for non-interactive exec |
+| Grok Build    | PASS     | `--single` + bypass/always-approve |
+| Antigravity   | PARTIAL  | Direct prefix works in-session; `--print` terminal invocation is unreliable |
+
 ### Usage highlights
 
 ```sh
@@ -206,9 +238,10 @@ core you extend yourself.
 | Custom filters         | `.lf` DSL + shell + Python (PEP 723/uv)                   | TOML DSL                                          |
 | Levels                 | `lite` / `full` / `ultra`                                 | `-l aggressive`, `--ultra-compact`                |
 | File-content filtering | `post-read` hook (code, markdown, HTML, data, lock files)  | `rtk read` / `smart` (signatures, summaries)      |
-| Agent integrations     | Claude Code, OpenCode, shell, Pi                          | 14 tools (Claude Code, Copilot, Gemini, Codex, …) |
+| Agent integrations     | Claude Code, Codex, Grok Build, Antigravity, OpenCode, shell, Pi | 14 tools (Claude Code, Copilot, Gemini, Codex, …) |
 | Telemetry              | None — local-only                                         | Opt-in, off by default (anonymous aggregate)      |
 | Savings analytics      | `lowfat stats` / `history` (local)                        | `rtk gain` / `discover` (local)                   |
+| Optional remote log    | Opt-in to your Supabase observatory (eng_evaluations)     | —                                                 |
 
 ### Token savings, head-to-head
 
@@ -222,12 +255,30 @@ counted with `tiktoken` (`cl100k_base`); savings are vs the raw command output:
 | `git log`    |       3350 |          -93% |           -97% | -56% |
 | `ls -la`     |        153 |          -77% |           -89% | -86% |
 | `find`       |        535 |           -0% |           -58% | -66% |
-
-Honest read: lowfat compresses git harder; rtk edges out `find`; `ls` is close.
+| Honest read: lowfat compresses git harder; rtk edges out `find`; `ls` is close.
 `find` only engages at lowfat's `ultra` level. rtk's `--ultra-compact` gave
 near-identical numbers to its default here, so the default is shown. This is a
 single small run on one repo — directional, not a benchmark; measure on your own
 workload before trusting any of it.
+
+### Optional Supabase observatory integration
+
+lowfat can optionally log its own token savings to a personal Supabase
+"observatory" (tables `eng_technologies` + `eng_evaluations`). This is
+**completely optional**, best-effort, and non-blocking.
+
+- Only activates when `LOWFAT_SUPABASE_URL` + `LOWFAT_SUPABASE_KEY` (or the
+  generic `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY`) are present.
+- Logs aggregates only: command, subcommand, raw/filtered/saved tokens,
+  savings %, had_plugin, reduced, exit code, elapsed ms. **No raw output or
+  full arguments** are sent.
+- Records under technology slug `lowfat` (category `tool`).
+- `lowfat stats` / `history` / `info` remain fully local and work offline.
+- Enabled status appears in `lowfat info` when active.
+- Debug failures with `LOWFAT_OBSERVATORY_DEBUG=1`.
+
+This respects the local-first design: the remote path is fire-and-forget and
+never affects stdout, exit code, or local tracking.
 
 ## License
 
