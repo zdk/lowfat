@@ -241,8 +241,8 @@ Multiple AI tools were used for this project
 
 <a href="https://www.star-history.com/?repos=zdk%2Flowfat&type=date&legend=top-left">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=zdk/lowfat&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=zdk/lowfat&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=zdk/lowfat&type=date&legend=top-left" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=zdk/lowfat&type=date&theme=dark&legend=top-left&sealed_token=NB0OcnvnrZARi5bHuUH4zU2fTo24N0xH2RdQKpCWZTc30Kg4nfXwai0bIPhLEhO76gNynjMjZFhB0DpdErgUoDjwtT6igLNum4v-lkMWKIz-uCbLVqEQR673kCYPTjuxCLYhV6shhszvAOX8Dw89gQ0RweWOHVeeNeFSE6fEDEBif_-9lp_PWn8y0iiF" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=zdk/lowfat&type=date&legend=top-left&sealed_token=NB0OcnvnrZARi5bHuUH4zU2fTo24N0xH2RdQKpCWZTc30Kg4nfXwai0bIPhLEhO76gNynjMjZFhB0DpdErgUoDjwtT6igLNum4v-lkMWKIz-uCbLVqEQR673kCYPTjuxCLYhV6shhszvAOX8Dw89gQ0RweWOHVeeNeFSE6fEDEBif_-9lp_PWn8y0iiF" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=zdk/lowfat&type=date&legend=top-left&sealed_token=NB0OcnvnrZARi5bHuUH4zU2fTo24N0xH2RdQKpCWZTc30Kg4nfXwai0bIPhLEhO76gNynjMjZFhB0DpdErgUoDjwtT6igLNum4v-lkMWKIz-uCbLVqEQR673kCYPTjuxCLYhV6shhszvAOX8Dw89gQ0RweWOHVeeNeFSE6fEDEBif_-9lp_PWn8y0iiF" />
  </picture>
 </a>
