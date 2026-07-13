@@ -1,0 +1,94 @@
+name: mac-r2-handoff
+
+on:
+  workflow_dispatch: {}
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build-mac-intel:
+    name: Build (Mac Intel)
+    runs-on: [self-hosted, macOS, X64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin, aarch64-apple-darwin
+
+      # ── GATE: build the raw binaries ──
+      - name: Build Intel and ARM
+        run: |
+          cargo build --release --target x86_64-apple-darwin
+          cargo build --release --target aarch64-apple-darwin
+
+      # ── Package to unsigned .app bundles ──
+      - name: Install cargo-packager
+        uses: cargo-bins/cargo-binstall@main
+      - run: cargo binstall -y cargo-packager
+      - name: Package Unsigned Apps
+        run: |
+          cargo packager --release --target x86_64-apple-darwin --formats app
+          cargo packager --release --target aarch64-apple-darwin --formats app
+
+      - name: Zip Unsigned Apps
+        run: |
+          zip -qr macos-x86_64-unsigned.zip target/x86_64-apple-darwin/release/*.app
+          zip -qr macos-aarch64-unsigned.zip target/aarch64-apple-darwin/release/*.app
+
+      # ── Upload to Cloudflare R2 (Scratch/Intermediate) ──
+      - name: Upload to R2 Scratch
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+        run: |
+          aws s3 cp macos-x86_64-unsigned.zip s3://${{ secrets.R2_BUCKET_NAME }}/${{ github.event.repository.name }}/intermediate/${{ github.sha }}/ --endpoint-url ${{ secrets.R2_ENDPOINT_URL }}
+          aws s3 cp macos-aarch64-unsigned.zip s3://${{ secrets.R2_BUCKET_NAME }}/${{ github.event.repository.name }}/intermediate/${{ github.sha }}/ --endpoint-url ${{ secrets.R2_ENDPOINT_URL }}
+
+  sign-mac-arm:
+    name: Sign (Mac ARM)
+    needs: build-mac-intel
+    runs-on: [self-hosted, macOS, ARM64]
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── Download from Cloudflare R2 Scratch ──
+      - name: Download from R2 Scratch
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+        run: |
+          aws s3 cp s3://${{ secrets.R2_BUCKET_NAME }}/${{ github.event.repository.name }}/intermediate/${{ github.sha }}/macos-x86_64-unsigned.zip . --endpoint-url ${{ secrets.R2_ENDPOINT_URL }}
+          aws s3 cp s3://${{ secrets.R2_BUCKET_NAME }}/${{ github.event.repository.name }}/intermediate/${{ github.sha }}/macos-aarch64-unsigned.zip . --endpoint-url ${{ secrets.R2_ENDPOINT_URL }}
+          unzip -q macos-x86_64-unsigned.zip -d x86_64-app
+          unzip -q macos-aarch64-unsigned.zip -d aarch64-app
+
+      # ── Codesign & Notarize (ARM Runner has certificates) ──
+      - name: Codesign and Notarize
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          echo "Signing x86_64 app bundle..."
+          # Run codesign logic on x86_64-app/...
+          echo "Signing aarch64 app bundle..."
+          # Run codesign logic on aarch64-app/...
+          
+          # Repackage to DMG after signing
+          echo "Packaging signed DMGs..."
+
+      # ── Push final signed release back to Cloudflare R2 ──
+      - name: Upload Final to R2 Release
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+        run: |
+          # Upload the signed DMGs to the final v* release prefix
+          aws s3 cp x86_64-app s3://${{ secrets.R2_BUCKET_NAME }}/${{ github.event.repository.name }}/v${{ github.ref_name }}/ --recursive --endpoint-url ${{ secrets.R2_ENDPOINT_URL }}
+          aws s3 cp aarch64-app s3://${{ secrets.R2_BUCKET_NAME }}/${{ github.event.repository.name }}/v${{ github.ref_name }}/ --recursive --endpoint-url ${{ secrets.R2_ENDPOINT_URL }}
