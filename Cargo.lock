@@ -520,6 +520,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "lowfat-mcp"
+version = "0.6.8"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
 name = "lowfat-plugin"
 version = "0.8.0"
 dependencies = [
