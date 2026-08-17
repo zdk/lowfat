@@ -13,7 +13,7 @@ pub fn save_on_failure(tee_dir: &Path, label: &str, raw: &str, exit_code: i32) {
         return;
     }
 
-    let safe_label = label.replace(' ', "_").replace('/', "_");
+    let safe_label = label.replace([' ', '/'], "_");
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())

@@ -1,7 +1,7 @@
 /// Estimate token count from text. ~4 chars = 1 token.
 /// Matches bash: `(len + 3) / 4`
 pub fn estimate_tokens(s: &str) -> usize {
-    (s.len() + 3) / 4
+    s.len().div_ceil(4)
 }
 
 #[cfg(test)]

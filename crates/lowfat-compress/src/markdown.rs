@@ -103,7 +103,7 @@ fn full(content: &str) -> String {
                 result.push_str(line);
                 result.push('\n');
             } else if table_rows == 11 {
-                result.push_str(&format!("| ... [more rows] |\n"));
+                result.push_str("| ... [more rows] |\n");
             }
             continue;
         } else {

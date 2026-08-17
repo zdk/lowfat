@@ -29,6 +29,7 @@ fn caps(level: Level) -> (usize, usize) {
     }
 }
 
+#[cfg(test)]
 fn is_valid_json(text: &str) -> bool {
     serde_json::from_str::<serde::de::IgnoredAny>(text.trim()).is_ok()
 }

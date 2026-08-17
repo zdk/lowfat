@@ -15,8 +15,8 @@ pub fn run(limit: usize) -> Result<()> {
 
     println!("Recent plugin activity:");
     println!(
-        "  {:20} {:20} {:8} {:10} {:12} {}",
-        "timestamp", "plugin", "runtime", "command", "action", "details"
+        "  {:20} {:20} {:8} {:10} {:12} details",
+        "timestamp", "plugin", "runtime", "command", "action"
     );
     println!("  {}", "-".repeat(90));
 

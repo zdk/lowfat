@@ -61,11 +61,11 @@ fn strip_block_comments(content: &str, spec: &LangSpec) -> String {
             continue;
         }
         if let Some(q) = docstring {
-            if trimmed.starts_with(q) {
+            if let Some(rest) = trimmed.strip_prefix(q) {
                 result.push_str(line);
                 result.push('\n');
                 // Opener with no closer on the same line → swallow until it closes.
-                if !trimmed[q.len()..].contains(q) {
+                if !rest.contains(q) {
                     in_doc = true;
                 }
                 continue;

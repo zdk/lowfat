@@ -1,5 +1,6 @@
 pub mod config;
 pub mod db;
+pub mod env;
 pub mod level;
 pub mod lf;
 pub mod pipeline;

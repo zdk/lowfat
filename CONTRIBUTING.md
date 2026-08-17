@@ -9,7 +9,13 @@ cargo build
 cargo test --workspace
 ```
 
-The workspace has four crates: `lowfat-core`, `lowfat-plugin`, `lowfat-runner`, and the `lowfat` CLI.
+To verify Linux from a Mac, run the suite in Docker (CI runs both):
+
+```sh
+docker run --rm -v "$PWD":/work -w /work -e CARGO_TARGET_DIR=/tmp/target rust:1 cargo test --workspace
+```
+
+The workspace has five crates: `lowfat-core`, `lowfat-compress`, `lowfat-plugin`, `lowfat-runner`, and the `lowfat` CLI.
 
 ## Pull requests
 

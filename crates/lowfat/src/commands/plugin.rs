@@ -38,7 +38,7 @@ pub fn collect_bench_rows(plugin: &DiscoveredPlugin) -> Result<Vec<BenchRow>> {
 
     let mut entries: Vec<_> = std::fs::read_dir(&samples_dir)?
         .filter_map(|e| e.ok())
-        .filter(|e| e.path().extension().map_or(false, |ext| ext == "txt"))
+        .filter(|e| e.path().extension().is_some_and(|ext| ext == "txt"))
         .collect();
     entries.sort_by_key(|e| e.path());
 

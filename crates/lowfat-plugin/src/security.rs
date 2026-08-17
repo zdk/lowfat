@@ -1,7 +1,6 @@
 //! Plugin security: path traversal checks, hook validation, env sanitization, trust.
 
 use crate::manifest::PluginManifest;
-use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -158,45 +157,14 @@ pub fn untrust_plugin(plugin_name: &str, lowfat_home: &Path) -> anyhow::Result<(
 
 // --- Environment sanitization ---
 
-const SAFE_ENV_VARS: &[&str] = &[
-    "LOWFAT_LEVEL",
-    "LOWFAT_COMMAND",
-    "LOWFAT_SUBCOMMAND",
-    "LOWFAT_EXIT_CODE",
-    "PATH",
-    "HOME",
-    "USER",
-    "SHELL",
-    "LANG",
-    "LC_ALL",
-    "LC_CTYPE",
-    "TERM",
-    "TMPDIR",
-    "GIT_DIR",
-    "GIT_WORK_TREE",
-    "DOCKER_HOST",
-    "KUBECONFIG",
-    "GOPATH",
-    "GOROOT",
-    "CARGO_HOME",
-    "RUSTUP_HOME",
-    "NODE_PATH",
-    "NPM_CONFIG_PREFIX",
-    "VIRTUAL_ENV",
-    "PYTHONPATH",
-];
-
-pub fn sanitized_env() -> Vec<(String, String)> {
-    let safe: HashSet<&str> = SAFE_ENV_VARS.iter().copied().collect();
-    std::env::vars()
-        .filter(|(k, _)| safe.contains(k.as_str()))
-        .collect()
-}
+// Allowlist lives in lowfat-core so the .lf exec path can use it too.
+pub use lowfat_core::env::sanitized_env;
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::manifest::PluginManifest;
+    use std::collections::HashSet;
 
     fn minimal_manifest(entry: &str) -> PluginManifest {
         let toml = format!(

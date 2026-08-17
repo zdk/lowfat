@@ -562,10 +562,7 @@ impl<'a> Parser<'a> {
     /// Stops at first significant line whose indent <= parent_indent.
     fn parse_indented_ops(&mut self, parent_indent: usize) -> Result<Vec<Op>> {
         let mut ops = Vec::new();
-        loop {
-            let Some(line) = self.peek_significant() else {
-                break;
-            };
+        while let Some(line) = self.peek_significant() {
             if line.indent <= parent_indent {
                 break;
             }
@@ -598,10 +595,7 @@ impl<'a> Parser<'a> {
     fn parse_cascade(&mut self, parent_indent: usize) -> Result<Vec<Branch>> {
         let mut branches: Vec<Branch> = Vec::new();
         let mut arm_indent: Option<usize> = None;
-        loop {
-            let Some(line) = self.peek_significant() else {
-                break;
-            };
+        while let Some(line) = self.peek_significant() {
             if line.indent <= parent_indent {
                 break;
             }
@@ -721,10 +715,7 @@ impl<'a> Parser<'a> {
 
         let mut branches: Vec<Branch> = Vec::new();
         let mut arm_indent: Option<usize> = None;
-        loop {
-            let Some(line) = self.peek_significant() else {
-                break;
-            };
+        while let Some(line) = self.peek_significant() {
             if line.indent <= parent_indent {
                 break;
             }
@@ -890,7 +881,7 @@ impl<'a> Parser<'a> {
             self.pos += 1;
         }
         // Trim trailing blank lines (they belong to the gap, not the body).
-        while collected.last().map_or(false, |l| l.text.is_empty()) {
+        while collected.last().is_some_and(|l| l.text.is_empty()) {
             collected.pop();
         }
         if collected.is_empty() {
@@ -917,10 +908,7 @@ impl<'a> Parser<'a> {
     fn parse_split_branches(&mut self, parent_indent: usize) -> Result<(Vec<Op>, Vec<Op>)> {
         let mut pre = Vec::new();
         let mut post = Vec::new();
-        loop {
-            let Some(line) = self.peek_significant() else {
-                break;
-            };
+        while let Some(line) = self.peek_significant() {
             if line.indent != parent_indent {
                 break;
             }
@@ -1762,6 +1750,8 @@ fn run_filter_child(
     ctx: &ExecCtx,
 ) -> Result<String> {
     let mut child = cmd
+        .env_clear()
+        .envs(crate::env::sanitized_env())
         .env("level", ctx.level.to_string())
         .env("sub", ctx.sub)
         .env("exit", ctx.exit_code.to_string())
@@ -2033,7 +2023,7 @@ diff, ultra:  compact 30  else-shell: awk 'NF' | head -50
         assert!(matches!(&ops[0], Op::MacroCall { name, .. } if name == "compact"));
         match &ops[1] {
             Op::OrShell(s) => assert_eq!(s, "awk 'NF' | head -50"),
-            _ => panic!("expected OrShell, got {:?}", &ops[1]),
+            _ => panic!("expected OrShell, got {:?}", ops[1]),
         }
     }
 
@@ -2359,6 +2349,19 @@ build:
         let out = execute(&rs, &ctx("build", Level::Ultra), "").unwrap();
         // ensure_trailing_newline normalizes shell output without a final \n
         assert_eq!(out, "build:ultra\n");
+    }
+
+    #[test]
+    fn exec_shell_does_not_see_parent_secrets() {
+        std::env::set_var("LF_TEST_FAKE_SECRET", "leaked");
+        let rs = parse_ok(
+            r#"
+build:
+    shell: printf '[%s]' "$LF_TEST_FAKE_SECRET"
+"#,
+        );
+        let out = execute(&rs, &ctx("build", Level::Full), "").unwrap();
+        assert_eq!(out, "[]\n");
     }
 
     #[test]
@@ -3012,7 +3015,11 @@ plan:
     #[test]
     fn absolute_include_path_rejected() {
         let d = tempfile::tempdir().unwrap();
-        let root = write(d.path(), "main.lf", "include /etc/passwd.lf\n*:\n    head 1\n");
+        let root = write(
+            d.path(),
+            "main.lf",
+            "include /etc/passwd.lf\n*:\n    head 1\n",
+        );
         let err = format!("{:#}", load(&root).unwrap_err());
         assert!(err.contains("must be relative"), "got: {err}");
     }

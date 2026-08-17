@@ -105,7 +105,7 @@ impl Pipeline {
             .split('|')
             .map(|s| s.trim())
             .filter(|s| !s.is_empty())
-            .map(|raw| parse_pipeline_stage(raw))
+            .map(parse_pipeline_stage)
             .collect();
         Pipeline { stages }
     }
@@ -219,17 +219,15 @@ pub fn proc_strip_ansi(text: &str) -> String {
     let mut result = String::with_capacity(text.len());
     let mut chars = text.chars().peekable();
     while let Some(ch) = chars.next() {
-        if ch == '\x1b' {
-            if chars.peek() == Some(&'[') {
+        if ch == '\x1b' && chars.peek() == Some(&'[') {
+            chars.next();
+            while let Some(&c) = chars.peek() {
                 chars.next();
-                while let Some(&c) = chars.peek() {
-                    chars.next();
-                    if c.is_ascii_alphabetic() {
-                        break;
-                    }
+                if c.is_ascii_alphabetic() {
+                    break;
                 }
-                continue;
             }
+            continue;
         }
         result.push(ch);
     }
@@ -257,8 +255,12 @@ pub fn proc_token_budget(text: &str, max_tokens: usize) -> String {
         return text.to_string();
     }
     let ratio = max_tokens as f64 / current as f64;
-    let target_chars = (text.len() as f64 * ratio) as usize;
-    let mut result = text[..target_chars.min(text.len())].to_string();
+    // Byte offset from a ratio — back up to a char boundary before slicing.
+    let mut cut = ((text.len() as f64 * ratio) as usize).min(text.len());
+    while !text.is_char_boundary(cut) {
+        cut -= 1;
+    }
+    let mut result = text[..cut].to_string();
     if let Some(pos) = result.rfind('\n') {
         result.truncate(pos);
     }
@@ -385,7 +387,7 @@ pub fn proc_cut(text: &str, spec: &str) -> String {
             for &(start, end) in &ranges {
                 let end = end.min(n);
                 for i in start..=end {
-                    if let Some(&field) = parts.get(i.checked_sub(1).unwrap_or(0)) {
+                    if let Some(&field) = parts.get(i.saturating_sub(1)) {
                         if i >= 1 {
                             selected.push(field);
                         }
@@ -419,7 +421,7 @@ pub fn apply_builtin(
             Some(proc_truncate(text, limit))
         }
         "token-budget" => {
-            let budget = param.unwrap_or_else(|| match level {
+            let budget = param.unwrap_or(match level {
                 Level::Lite => 2000,
                 Level::Full => 1000,
                 Level::Ultra => 500,
@@ -582,6 +584,14 @@ mod tests {
         let input = "a".repeat(400); // 100 tokens
         let result = proc_token_budget(&input, 50);
         assert!(result.len() < input.len());
+        assert!(result.contains("truncated to"));
+    }
+
+    #[test]
+    fn token_budget_multibyte_no_panic() {
+        // cut lands mid-char without the boundary backoff (issue: panic on ✓/→/emoji)
+        let input = "✓".repeat(200);
+        let result = proc_token_budget(&input, 20);
         assert!(result.contains("truncated to"));
     }
 
