@@ -22,7 +22,7 @@ function shellQuote(value: string): string {
 
 export const LowfatOpenCodePlugin: Plugin = async () => {
   try {
-    await execAsync("which lowfat")
+    await execAsync("command -v lowfat")
   } catch {
     console.warn("[lowfat] lowfat binary not found in PATH — plugin disabled")
     return {}
