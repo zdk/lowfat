@@ -1,9 +1,13 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import { exec as execCb } from "node:child_process"
+import { homedir } from "node:os"
+import { join } from "node:path"
 import { promisify } from "node:util"
 
 // lowfat OpenCode plugin — rewrites commands to run through lowfat for LLM
-// token savings. Requires the `lowfat` binary in PATH.
+// token savings. The `lowfat` binary is resolved once at init (PATH first,
+// then ~/.local/bin, ~/.cargo/bin, /usr/local/bin) and invoked by absolute
+// path, so a GUI-launched desktop's minimal PATH doesn't disable the plugin.
 //
 // Thin delegating plugin: all rewrite logic lives in `lowfat rewrite`, the
 // single source of truth (crates/lowfat/src/commands/rewrite.rs). To change
@@ -20,11 +24,41 @@ function shellQuote(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`
 }
 
-export const LowfatOpenCodePlugin: Plugin = async () => {
+// Resolve the lowfat binary to an absolute path, once at init. PATH first
+// (covers a normal shell login); then well-known install locations — a
+// GUI-launched Electron desktop inherits a minimal PATH that may lack
+// ~/.local/bin, so a bare `lowfat` on PATH would fail there even though the
+// binary is installed. Returns null only when no candidate is executable.
+async function resolveLowfat(): Promise<string | null> {
   try {
-    await execAsync("command -v lowfat")
+    const { stdout } = await execAsync("command -v lowfat")
+    const onPath = stdout.trim()
+    if (onPath) return onPath
   } catch {
-    console.warn("[lowfat] lowfat binary not found in PATH — plugin disabled")
+    // not on PATH — fall through to known locations
+  }
+  const candidates = [
+    join(homedir(), ".local", "bin", "lowfat"),
+    join(homedir(), ".cargo", "bin", "lowfat"),
+    "/usr/local/bin/lowfat",
+  ]
+  for (const candidate of candidates) {
+    try {
+      await execAsync(`test -x ${shellQuote(candidate)}`)
+      return candidate
+    } catch {
+      // not here either
+    }
+  }
+  return null
+}
+
+export const LowfatOpenCodePlugin: Plugin = async () => {
+  const lowfat = await resolveLowfat()
+  if (lowfat === null) {
+    console.warn(
+      "[lowfat] lowfat binary not found (PATH, ~/.local/bin, ~/.cargo/bin, /usr/local/bin) — plugin disabled",
+    )
     return {}
   }
 
@@ -41,7 +75,7 @@ export const LowfatOpenCodePlugin: Plugin = async () => {
 
       let stdout: string
       try {
-        stdout = (await execAsync(`lowfat rewrite ${shellQuote(command)}`)).stdout
+        stdout = (await execAsync(`${shellQuote(lowfat)} rewrite ${shellQuote(command)}`)).stdout
       } catch (err) {
         // nothrow equivalent: a non-zero exit that still printed a rewrite
         // is honored; otherwise stdout is empty and the command passes through.
