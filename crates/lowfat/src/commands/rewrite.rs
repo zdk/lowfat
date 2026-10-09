@@ -32,7 +32,43 @@ pub fn rewrite_command(command: &str) -> Option<String> {
         return None;
     }
 
+    // A downstream parser (`| jq`, `> out.json`) needs JSON byte-exact, so
+    // tell the run path to leave JSON output alone.
+    if stdout_is_redirected(command) {
+        return Some(format!("LOWFAT_PIPED=1 lowfat {command}"));
+    }
     Some(format!("lowfat {command}"))
+}
+
+/// True when the command's stdout feeds a pipe or a file.
+/// ponytail: quote-aware scan, not a shell parser. `||` and stderr-only
+/// redirects (`2>`, `>&2`) are skipped; a `|` inside `$(...)` still counts.
+/// A false positive only costs savings on JSON output.
+fn stdout_is_redirected(command: &str) -> bool {
+    let chars: Vec<char> = command.chars().collect();
+    let mut quote: Option<char> = None;
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        let next = chars.get(i + 1).copied();
+        match (quote, c) {
+            (Some(q), _) if c == q => quote = None,
+            (Some('"'), '\\') | (None, '\\') => i += 1,
+            (Some(_), _) => {}
+            (None, '\'' | '"') => quote = Some(c),
+            (None, '|') if next == Some('|') => i += 1,
+            (None, '|') => return true,
+            (None, '>') => {
+                let stderr_only = i > 0 && chars[i - 1] == '2';
+                if !stderr_only && next != Some('&') {
+                    return true;
+                }
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    false
 }
 
 /// `lowfat rewrite <command...>` — print the rewritten command on stdout.
@@ -69,6 +105,28 @@ mod tests {
     fn skips_unknown_command() {
         // curl has no builtin/plugin filter by default.
         assert_eq!(rewrite_command("curl https://example.com"), None);
+    }
+
+    #[test]
+    fn marks_redirected_stdout() {
+        assert_eq!(
+            rewrite_command("git log | head"),
+            Some("LOWFAT_PIPED=1 lowfat git log | head".into())
+        );
+        for (cmd, want) in [
+            ("kubectl get pods -o json | jq .", true),
+            ("kubectl get pods -o json > pods.json", true),
+            ("kubectl get pods -o json &> all.txt", true),
+            ("kubectl get pods -o json", false),
+            ("kubectl get pods -o json 2>&1", false),
+            ("kubectl get pods -o json 2>/dev/null", false),
+            ("kubectl get pods || echo failed", false),
+            ("grep -E 'a|b' file", false),
+            ("grep \"a > b\" file", false),
+            ("grep a\\|b file", false),
+        ] {
+            assert_eq!(stdout_is_redirected(cmd), want, "{cmd}");
+        }
     }
 
     #[test]

@@ -7,18 +7,24 @@
 //! the agent.
 //!
 //! Recognised shapes: a single JSON document, NDJSON (one value per
-//! line), and a JSON document followed by non-JSON trailer lines (stderr
-//! is appended to stdout, so warnings often land after the JSON).
+//! line), and documents printed back to back. A few non-JSON lines may
+//! sit before or after the JSON: stderr is appended to stdout, so
+//! warnings often land there.
 
 use crate::level::Level;
 use serde_json::Value;
 
-/// JSON-shaped output, as detected in raw text.
-enum Shape {
-    Single(Value),
-    NdJson(Vec<Value>),
-    WithTrailer(Value, String),
+/// JSON-shaped output, as detected in raw text: optional non-JSON lines,
+/// one or more JSON values, then optional non-JSON lines.
+struct Shape {
+    preamble: String,
+    values: Vec<Value>,
+    trailer: String,
 }
+
+/// Most non-JSON lines allowed before or after the JSON (warnings,
+/// notices). Past this the text is prose that happens to hold JSON.
+const MAX_EXTRA_LINES: usize = 20;
 
 /// (max array items / NDJSON records, max string chars) per level.
 fn caps(level: Level) -> (usize, usize) {
@@ -36,29 +42,66 @@ fn is_valid_json(text: &str) -> bool {
 /// Detect a JSON shape. None = not JSON-shaped, leave the text alone.
 fn analyze(raw: &str) -> Option<Shape> {
     let t = raw.trim();
-    if !(t.starts_with('{') || t.starts_with('[')) {
-        return None;
-    }
-    if let Ok(v) = serde_json::from_str(t) {
-        return Some(Shape::Single(v));
-    }
-    // NDJSON: every non-blank line is its own value
-    let lines: Vec<&str> = t.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
-    if lines.len() >= 2 {
-        if let Some(vals) = lines.iter().map(|l| serde_json::from_str(l).ok()).collect() {
-            return Some(Shape::NdJson(vals));
+    // Warnings can print first, so try each early line that opens a value.
+    let mut off = 0;
+    for (i, line) in t.split_inclusive('\n').enumerate() {
+        if i > MAX_EXTRA_LINES {
+            break;
         }
-    }
-    // One document + non-JSON trailer (e.g. appended stderr warnings).
-    // A trailer that itself starts with {/[ means malformed JSON — bail.
-    let mut stream = serde_json::Deserializer::from_str(t).into_iter::<Value>();
-    if let Some(Ok(v)) = stream.next() {
-        let rest = t[stream.byte_offset()..].trim();
-        if !rest.is_empty() && !rest.starts_with('{') && !rest.starts_with('[') {
-            return Some(Shape::WithTrailer(v, rest.to_string()));
+        if line.starts_with(['{', '[']) {
+            if let Some(shape) = analyze_from(t, off) {
+                return Some(shape);
+            }
         }
+        off += line.len();
     }
     None
+}
+
+/// Read JSON values starting at `off`. Covers a single document, NDJSON,
+/// and pretty-printed documents printed back to back (`go list -json`).
+fn analyze_from(t: &str, off: usize) -> Option<Shape> {
+    let body = &t[off..];
+    let mut stream = serde_json::Deserializer::from_str(body).into_iter::<Value>();
+    let mut values = Vec::new();
+    let mut end = 0;
+    loop {
+        let rest = &body[end..];
+        let next = end + rest.len() - rest.trim_start().len();
+        if !body[next..].starts_with(['{', '[']) {
+            break;
+        }
+        match stream.next() {
+            Some(Ok(v)) => {
+                values.push(v);
+                end = stream.byte_offset();
+            }
+            Some(Err(e)) => {
+                // `[WARN] ...` is text: it fails on the line it opens.
+                // Anything else is cut or malformed JSON, so bail.
+                let line = 1 + body[..next].matches('\n').count();
+                if e.is_eof() || e.line() != line {
+                    return None;
+                }
+                break;
+            }
+            None => break,
+        }
+    }
+    let trailer = body[end..].trim();
+    if values.is_empty() || trailer.lines().count() > MAX_EXTRA_LINES {
+        return None;
+    }
+    Some(Shape {
+        preamble: t[..off].trim_end().to_string(),
+        values,
+        trailer: trailer.to_string(),
+    })
+}
+
+/// True when `raw` is JSON-shaped — see [`guard_json`] for the shapes.
+pub fn is_json(raw: &str) -> bool {
+    analyze(raw).is_some()
 }
 
 /// Cap arrays and long strings, recursively. Omissions become string
@@ -99,31 +142,34 @@ fn prune(v: &Value, level: Level) -> Value {
 }
 
 fn recompact(shape: &Shape, level: Level) -> Option<String> {
-    let out = match shape {
-        Shape::Single(v) => serde_json::to_string(&prune(v, level)).ok()?,
-        Shape::NdJson(vals) => {
-            let (max_records, _) = caps(level);
-            let mut lines: Vec<String> = vals
-                .iter()
-                .take(max_records)
-                .filter_map(|v| serde_json::to_string(&prune(v, level)).ok())
-                .collect();
-            if vals.len() > max_records {
-                lines.push(format!(
-                    "\"... {} more records (lowfat; LOWFAT_LEVEL=lite for more)\"",
-                    vals.len() - max_records
-                ));
-            }
-            lines.join("\n")
-        }
-        Shape::WithTrailer(v, trailer) => {
-            format!(
-                "{}\n{trailer}",
-                serde_json::to_string(&prune(v, level)).ok()?
-            )
-        }
-    };
-    Some(out)
+    let (max_records, _) = caps(level);
+    let mut lines: Vec<String> = Vec::new();
+    if !shape.preamble.is_empty() {
+        lines.push(shape.preamble.clone());
+    }
+    for v in shape.values.iter().take(max_records) {
+        lines.push(serde_json::to_string(&prune(v, level)).ok()?);
+    }
+    if shape.values.len() > max_records {
+        lines.push(format!(
+            "\"... {} more records (lowfat; LOWFAT_LEVEL=lite for more)\"",
+            shape.values.len() - max_records
+        ));
+    }
+    if !shape.trailer.is_empty() {
+        lines.push(shape.trailer.clone());
+    }
+    Some(lines.join("\n"))
+}
+
+/// True when `filtered` still parses the way the raw did: JSON values, plus
+/// at most the raw's own warning lines. Leftover fragments around the JSON,
+/// or a filter's "N lines omitted" marker, mean a line filter cut it.
+fn is_intact(filtered: &str, raw: &Shape) -> bool {
+    analyze(filtered).is_some_and(|f| {
+        (f.preamble.is_empty() || f.preamble == raw.preamble)
+            && (f.trailer.is_empty() || f.trailer == raw.trailer)
+    })
 }
 
 /// If `raw` is JSON-shaped but `filtered` no longer is, return a compacted,
@@ -132,7 +178,7 @@ pub fn guard_json(raw: &str, filtered: &str, level: Level) -> Option<String> {
     let shape = analyze(raw)?;
     // Empty is a deliberate filter result (e.g. grep with no matches), and
     // still-JSON-shaped output (passthrough, grep over NDJSON) is fine.
-    if filtered.trim().is_empty() || analyze(filtered).is_some() {
+    if filtered.trim().is_empty() || is_intact(filtered, &shape) {
         return None;
     }
     // Re-parse before it reaches the agent; raw is JSON-shaped by premise.
@@ -237,6 +283,58 @@ mod tests {
         assert!(fixed.contains("warning: deprecated flag"));
         let json_part = fixed.lines().next().unwrap();
         assert!(is_valid_json(json_part));
+    }
+
+    #[test]
+    fn back_to_back_documents_are_guarded() {
+        // `go list -json`: pretty documents with no separator.
+        let raw = "{\n  \"a\": 1\n}\n{\n  \"a\": 2\n}\n{\n  \"a\": 3\n}\n";
+        let fixed = guard_json(raw, "{\n  \"a\": 1\n}\n{\n", Level::Full).unwrap();
+        assert_eq!(fixed, "{\"a\":1}\n{\"a\":2}\n{\"a\":3}");
+        // Cut inside the second document: not JSON-shaped, so it is repaired.
+        assert!(!is_json("{\"a\":1}\n{\n  \"a\":"));
+    }
+
+    #[test]
+    fn bracketed_trailer_is_text_not_json() {
+        let raw = format!("{}\n[WARN] flag is deprecated\n", big_array_json(100));
+        let fixed = guard_json(&raw, "[{\"id\":0},", Level::Full).unwrap();
+        let (json_part, trailer) = fixed.split_once('\n').unwrap();
+        assert!(is_valid_json(json_part));
+        assert_eq!(trailer, "[WARN] flag is deprecated");
+    }
+
+    #[test]
+    fn leading_warning_lines_are_kept() {
+        let raw = format!("Warning: deprecated\n{}\n", big_array_json(100));
+        let fixed = guard_json(&raw, "Warning: deprecated\n[{\"id\":0},", Level::Full).unwrap();
+        let (preamble, json_part) = fixed.split_once('\n').unwrap();
+        assert_eq!(preamble, "Warning: deprecated");
+        assert!(is_valid_json(json_part));
+    }
+
+    #[test]
+    fn prose_holding_json_is_not_json_shaped() {
+        // Too much text around the value: leave it to the line filters.
+        let tail = "log line\n".repeat(MAX_EXTRA_LINES + 1);
+        assert!(!is_json(&format!("{{\"a\":1}}\n{tail}")));
+        let head = "log line\n".repeat(MAX_EXTRA_LINES + 2);
+        assert!(!is_json(&format!("{head}{{\"a\":1}}")));
+        assert!(!is_json("[INFO] started\n[INFO] done"));
+    }
+
+    #[test]
+    fn fragments_around_valid_json_are_repaired() {
+        // `tail` on pretty JSON leaves debris, then a parsable inner value.
+        let raw = big_array_json(100);
+        let tailed = "    \"x\": 1\n  },\n{\"id\":99}\n]";
+        assert!(is_valid_json(
+            &guard_json(&raw, tailed, Level::Full).unwrap()
+        ));
+        // A filter's own marker line is not part of the JSON either.
+        let cut = format!("{}\n... 3 lines omitted ...", ndjson(2));
+        let fixed = guard_json(&ndjson(5), &cut, Level::Full).unwrap();
+        assert!(fixed.lines().all(is_valid_json), "got: {fixed}");
     }
 
     #[test]

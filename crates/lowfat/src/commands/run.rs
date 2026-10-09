@@ -121,10 +121,20 @@ pub fn run(args: &[String]) -> i32 {
         exit_code,
     };
 
+    // JSON headed for another program (`| jq`, `> out.json`) must arrive
+    // byte-exact: pruning changes what the parser sees. `rewrite` sets
+    // LOWFAT_PIPED when the command's stdout is piped or redirected.
+    let piped_json =
+        std::env::var_os("LOWFAT_PIPED").is_some() && lowfat_core::structured::is_json(&raw);
+
     // Execute the pipeline chain
-    let filtered = match execute_pipeline(&pipeline, &raw, &input, &plugin_map) {
-        Ok(text) => text,
-        Err(_) => raw.clone(),
+    let filtered = if piped_json {
+        raw.clone()
+    } else {
+        match execute_pipeline(&pipeline, &raw, &input, &plugin_map) {
+            Ok(text) => text,
+            Err(_) => raw.clone(),
+        }
     };
 
     let elapsed = start.elapsed().as_millis() as u64;
