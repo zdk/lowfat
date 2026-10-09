@@ -46,7 +46,7 @@ subcommands = ["get", "describe", "logs", "apply"]
 
 # The lf-filter DSL
 
-**lf-filter** is lowfat's declarative plugin DSL. A `.lf` file is a sequence of `include` directives, `define` blocks, and `rule` blocks; the runner picks the first rule whose selector matches `(subcommand, level)` and runs its ops top-to-bottom.
+**lf-filter** is lowfat's declarative plugin DSL. A `.lf` file is a sequence of `include` directives, `define` blocks, and `rule` blocks; the runner picks the first rule whose selector matches `(subcommand, level)` and runs its ops top-to-bottom. A rule is written as a `selector:` line or, since 0.9.0, as a [named `rule` block](#named-rules--rule-name) with match fields.
 
 ## Selectors
 
@@ -101,6 +101,45 @@ An arm body is itself a pipeline — inline after the colon, or indented for sev
 | `--stat`, `-p`, …           | that flag is present in `$args`      |
 
 Join guards with `and` — `if level ultra and --stat:`. For "or", write separate arms: first-match-wins is the disjunction. `else` is optional; if no arm matches, the stream passes through unchanged.
+
+A flag guard may list spellings of one flag with `|`: `if -o|--output json:`.
+
+## Named rules — `rule <name>:`
+
+A named rule states what it matches as fields, then its pipeline under `do:`.
+
+```awk
+rule describe-json:
+    sub: describe
+    flag: -o|--output json
+    do:
+        truncate-json
+
+rule describe:
+    sub: describe
+    exit: ok
+    do:
+        drop-describe-noise
+        head 150
+```
+
+| Field   | Value                               | Omitted means  |
+| ------- | ----------------------------------- | -------------- |
+| `sub`   | same patterns as a selector         | any subcommand |
+| `level` | `ultra`, `full` or `lite`           | any level      |
+| `exit`  | `ok` or `failed`                    | any exit code  |
+| `flag`  | a flag guard; the field may repeat  | any args       |
+
+Every field must hold. If one does not, the rule is skipped and the next rule
+is tried. A cascade differs here: it passes the stream through when no arm
+matches.
+
+`do:` takes the same body as a selector rule, inline or indented. Names must
+be unique in a file. `lowfat filter --explain` prints the name of the rule
+that ran. Named rules and `selector:` rules can share a file, and order still
+decides which one wins.
+
+Runnable example: [`examples/named-rules`](../examples/named-rules).
 
 ## Escape hatches (subprocess)
 
@@ -339,6 +378,24 @@ uv = "*"
 | `$exit != 0` | Be conservative — preserve error blocks                                |
 
 `$sub` is the first arg of the original command (`get`, `describe`, …). Walk `$args` when the subcommand alone isn't enough (resource type, output flags). Empty output = passthrough (lowfat falls back to the original).
+
+## JSON output
+
+lowfat checks every filtered result against the raw output, so a filter
+cannot hand the agent broken JSON.
+
+- **What counts as JSON:** one document, NDJSON, or documents printed back
+  to back (`go list -json`). Up to 20 warning lines may sit before or after.
+- **If a filter cuts it:** lowfat rebuilds the output from the parsed raw
+  JSON. Arrays and long strings are capped by level, and each cut leaves a
+  string marker such as `"... 250 more items"`.
+- **If stdout is piped or redirected:** JSON passes through byte-exact, with
+  no filtering. `kubectl get pods -o json | jq ...` sees the real data. The
+  hook and `lowfat rewrite` detect the `|` or `>` and set `LOWFAT_PIPED=1`.
+  Set it yourself when you call `lowfat` directly in a pipeline.
+
+A plugin does not need to do anything for this. A JSON-aware macro such as
+`truncate-json` only has to emit valid JSON, and the check leaves it alone.
 
 ---
 

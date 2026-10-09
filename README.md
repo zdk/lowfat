@@ -186,7 +186,7 @@ Compression level follows `LOWFAT_LEVEL` (lite/full/ultra). Files with <10% savi
 
 - **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — high-level diagram: CLI, Runner, Plugins, Builtins
 - **[docs/CONFIG.md](docs/CONFIG.md)** — `.lowfat` file, env vars, pipeline DSL, built-in processors, the `history` ranking
-- **[docs/PLUGINS.md](docs/PLUGINS.md)** — lf-filter (the `.lf` plugin DSL), shell escape hatches, PEP 723 + uv, AI agent prompt
+- **[docs/PLUGINS.md](docs/PLUGINS.md)** — lf-filter (the `.lf` plugin DSL), named rules, the JSON output guarantee, shell escape hatches, PEP 723 + uv, AI agent prompt
 
 ## Alternatives
 
