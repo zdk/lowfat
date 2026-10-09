@@ -1,0 +1,6 @@
+Name:         web-7d9f
+Namespace:    prod
+Annotations:  checksum/config: 3f1a
+Status:       Running
+IP:           10.0.4.17
+Events:       <none>

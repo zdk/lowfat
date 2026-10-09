@@ -31,8 +31,12 @@ pub struct Define {
 
 #[derive(Debug, Clone)]
 pub struct Rule {
+    /// Set for `rule <name>:` blocks; `None` for `selector:` rules.
+    pub name: Option<String>,
     pub sub: SubPattern,
     pub level: LevelPattern,
+    /// `flag:` / `exit:` match fields of a named rule.
+    pub guard: Option<Guard>,
     pub ops: Vec<Op>,
     pub line_no: usize,
 }
@@ -126,6 +130,16 @@ impl RuleSet {
     /// First-match-wins. Returns `None` when no rule matches.
     pub fn select(&self, sub: &str, level: Level) -> Option<&Rule> {
         self.rules.iter().find(|r| r.matches(sub, level))
+    }
+
+    /// Like [`select`](Self::select), but also checks each rule's `flag:` /
+    /// `exit:` fields. A rule whose fields don't hold is skipped, so the
+    /// next rule gets a chance.
+    fn select_ctx(&self, ctx: &ExecCtx) -> Option<(usize, &Rule)> {
+        self.rules.iter().enumerate().find(|(_, r)| {
+            r.matches(ctx.sub, ctx.level)
+                && r.guard.as_ref().map_or(true, |g| guard_matches(g, ctx))
+        })
     }
 
     pub fn find_define(&self, name: &str) -> Option<&Define> {
@@ -484,6 +498,16 @@ impl<'a> Parser<'a> {
             if line.text.starts_with("define ") {
                 let d = self.parse_define()?;
                 rs.defines.push(d);
+            } else if line.text.starts_with("rule ") {
+                let r = self.parse_named_rule()?;
+                if rs.rules.iter().any(|x| x.name == r.name) {
+                    bail!(
+                        "line {}: duplicate rule name `{}`",
+                        r.line_no,
+                        r.name.as_deref().unwrap_or("")
+                    );
+                }
+                rs.rules.push(r);
             } else {
                 let r = self.parse_rule()?;
                 rs.rules.push(r);
@@ -549,8 +573,99 @@ impl<'a> Parser<'a> {
             bail!("line {}: rule has no ops", line_no);
         }
         Ok(Rule {
+            name: None,
             sub,
             level,
+            guard: None,
+            ops,
+            line_no,
+        })
+    }
+
+    /// Parse a named rule: match fields, then the pipeline under `do:`.
+    ///   rule describe-json:
+    ///       sub: describe
+    ///       flag: -o|--output json
+    ///       do:
+    ///           truncate-json
+    /// Fields are `sub`, `level`, `exit`, `flag` — all optional, all must
+    /// hold. `flag` may repeat. An omitted field matches anything.
+    fn parse_named_rule(&mut self) -> Result<Rule> {
+        let header = self.advance().unwrap();
+        let line_no = header.line_no;
+        let name = header.text["rule".len()..]
+            .trim()
+            .strip_suffix(':')
+            .ok_or_else(|| anyhow!("line {}: expected `rule <name>:`", line_no))?
+            .trim();
+        if name.is_empty()
+            || !name
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        {
+            bail!(
+                "line {}: rule name `{}` must be letters, digits, `-` or `_`",
+                line_no,
+                name
+            );
+        }
+
+        let mut sub: Option<&str> = None;
+        let mut level: Option<&str> = None;
+        let mut exit = false;
+        let mut atoms = Vec::new();
+        let mut ops: Option<Vec<Op>> = None;
+        while let Some(line) = self.peek_significant() {
+            if line.indent <= header.indent {
+                break;
+            }
+            let n = line.line_no;
+            let (key, value) = line
+                .text
+                .split_once(':')
+                .ok_or_else(|| anyhow!("line {}: expected `<field>: <value>` or `do:`", n))?;
+            let (key, value) = (key.trim(), value.trim());
+            let dup = match key {
+                "sub" => sub.replace(value).is_some(),
+                "level" => level.replace(value).is_some(),
+                "exit" => std::mem::replace(&mut exit, true),
+                "flag" => false,
+                "do" => ops.is_some(),
+                other => bail!(
+                    "line {}: unknown field `{}` (expected sub|level|exit|flag|do)",
+                    n,
+                    other
+                ),
+            };
+            if dup {
+                bail!("line {}: `{}` given twice in rule `{}`", n, key, name);
+            }
+            if key != "do" && value.is_empty() {
+                bail!("line {}: `{}` needs a value", n, key);
+            }
+            self.advance();
+            match key {
+                "exit" => atoms.push(parse_atom(&format!("exit {value}"), n)?),
+                "flag" if !value.starts_with('-') => {
+                    bail!("line {}: `flag` must start with `-`, got `{}`", n, value)
+                }
+                "flag" => atoms.push(Atom::Flag(value.to_string())),
+                "do" => ops = Some(self.parse_arm_body(value, line.indent, n)?),
+                _ => {}
+            }
+        }
+
+        let ops = ops.unwrap_or_default();
+        if ops.is_empty() {
+            bail!("line {}: rule `{}` needs a `do:` with ops", line_no, name);
+        }
+        let selector = format!("{},{}", sub.unwrap_or("*"), level.unwrap_or("*"));
+        let (sub, level) = parse_selector(&selector).with_context(|| format!("line {line_no}"))?;
+        Ok(Rule {
+            name: Some(name.to_string()),
+            sub,
+            level,
+            guard: (!atoms.is_empty()).then_some(Guard { atoms }),
             ops,
             line_no,
         })
@@ -1416,7 +1531,7 @@ pub struct ExecCtx<'a> {
 /// Non-empty output always ends in a newline, matching the convention
 /// of shell tools like `echo` and `grep`.
 pub fn execute(rs: &RuleSet, ctx: &ExecCtx, input: &str) -> Result<String> {
-    let Some(rule) = rs.select(ctx.sub, ctx.level) else {
+    let Some((_, rule)) = rs.select_ctx(ctx) else {
         return Ok(input.to_string());
     };
     let out = run_ops(&rule.ops, ctx, input, rs, &[])?;
@@ -1454,12 +1569,7 @@ pub struct ExplainTrace {
 /// avoid in tight loops.
 pub fn execute_explain(rs: &RuleSet, ctx: &ExecCtx, input: &str) -> Result<(String, ExplainTrace)> {
     let mut trace = ExplainTrace::default();
-    let Some((idx, rule)) = rs
-        .rules
-        .iter()
-        .enumerate()
-        .find(|(_, r)| r.matches(ctx.sub, ctx.level))
-    else {
+    let Some((idx, rule)) = rs.select_ctx(ctx) else {
         return Ok((input.to_string(), trace));
     };
     trace.matched_rule = Some(idx);
@@ -1656,6 +1766,13 @@ fn atom_matches(a: &Atom, ctx: &ExecCtx) -> bool {
 /// `--statistics`. This is what lets a kubectl `get` rule treat `-o yaml`
 /// (prune) differently from `-o json` (pass through byte-exact).
 fn flag_matches(spec: &str, args: &[String]) -> bool {
+    // `-o|--output json` — spellings of one flag, sharing the value.
+    let (names, value) = spec.split_once(char::is_whitespace).unwrap_or((spec, ""));
+    if names.contains('|') {
+        return names
+            .split('|')
+            .any(|n| flag_matches(format!("{n} {value}").trim_end(), args));
+    }
     match spec.split_once(char::is_whitespace) {
         None => args
             .iter()
@@ -2664,6 +2781,88 @@ diff:
     }
 
     #[test]
+    fn named_rules_match_on_fields_and_fall_through() {
+        // Fields are ANDed; a rule whose fields don't hold is skipped so the
+        // next rule runs — unlike a cascade, which would pass through.
+        let rs = parse_ok(
+            "rule describe-json:\n    sub: describe\n    flag: -o|--output json\n    do: head 1\n\
+             rule describe-failed:\n    sub: describe\n    exit: failed\n    do:\n        raw\n\
+             rule describe-ultra:\n    sub: describe\n    level: ultra\n    do:\n        head 2\n\
+             rule describe:\n    sub: describe\n    do:\n        if --short: head 1\n        else: head 3\n\
+             *:\n    tail 1\n",
+        );
+        assert_eq!(rs.rules[0].name.as_deref(), Some("describe-json"));
+        assert!(rs.rules[4].name.is_none());
+
+        let input = "a\nb\nc\nd\n";
+        let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        let cases = [
+            ("describe", Level::Full, 0, s(&["-o", "json"]), "a\n"),
+            ("describe", Level::Full, 0, s(&["--output=json"]), "a\n"),
+            ("describe", Level::Full, 0, s(&["-o", "yaml"]), "a\nb\nc\n"),
+            ("describe", Level::Ultra, 1, s(&[]), input),
+            ("describe", Level::Ultra, 0, s(&[]), "a\nb\n"),
+            ("describe", Level::Full, 0, s(&["--short"]), "a\n"),
+            ("get", Level::Full, 0, s(&["-o", "json"]), "d\n"),
+        ];
+        for (sub, level, exit_code, args, want) in cases {
+            let ctx = ExecCtx {
+                sub,
+                level,
+                exit_code,
+                args: &args,
+            };
+            assert_eq!(
+                execute(&rs, &ctx, input).unwrap(),
+                want,
+                "{sub} {args:?} exit={exit_code}"
+            );
+        }
+    }
+
+    #[test]
+    fn named_rule_rejects_bad_shapes() {
+        let cases = [
+            ("rule a:\n    sub: x\n", "needs a `do:`"),
+            ("rule a:\n    when: x\n    do: raw\n", "unknown field"),
+            (
+                "rule a:\n    sub: x\n    sub: y\n    do: raw\n",
+                "given twice",
+            ),
+            (
+                "rule a:\n    flag: json\n    do: raw\n",
+                "must start with `-`",
+            ),
+            (
+                "rule a:\n    exit: maybe\n    do: raw\n",
+                "unknown exit value",
+            ),
+            ("rule a b:\n    do: raw\n", "rule name"),
+            (
+                "rule a:\n    do: raw\nrule a:\n    do: raw\n",
+                "duplicate rule name",
+            ),
+        ];
+        for (src, want) in cases {
+            let err = format!("{:#}", parse(src).unwrap_err());
+            assert!(err.contains(want), "src={src:?} got: {err}");
+        }
+    }
+
+    #[test]
+    fn flag_guard_alternation_in_cascade() {
+        let rs = parse_ok("get:\n    if -o|--output: head 1\n    else: raw\n");
+        let args = vec!["--output=wide".to_string()];
+        let ctx = ExecCtx {
+            sub: "get",
+            level: Level::Full,
+            exit_code: 0,
+            args: &args,
+        };
+        assert_eq!(execute(&rs, &ctx, "a\nb\n").unwrap(), "a\n");
+    }
+
+    #[test]
     fn exec_cascade_no_match_no_else_passes_through() {
         let rs = parse_ok("diff:\n    if exit failed: head 1\n");
         let out = execute(&rs, &ctx("diff", Level::Full), "x\ny\n").unwrap();
@@ -3012,7 +3211,11 @@ plan:
     #[test]
     fn absolute_include_path_rejected() {
         let d = tempfile::tempdir().unwrap();
-        let root = write(d.path(), "main.lf", "include /etc/passwd.lf\n*:\n    head 1\n");
+        let root = write(
+            d.path(),
+            "main.lf",
+            "include /etc/passwd.lf\n*:\n    head 1\n",
+        );
         let err = format!("{:#}", load(&root).unwrap_err());
         assert!(err.contains("must be relative"), "got: {err}");
     }

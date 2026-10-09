@@ -1,0 +1,18 @@
+rule describe-json:
+    sub: describe
+    flag: -o|--output json
+    do: raw
+
+rule describe-failed:
+    sub: describe
+    exit: failed
+    do: raw
+
+rule describe:
+    sub: describe
+    do:
+        drop /^Annotations:/
+        head 3
+
+*:
+    tail 1
