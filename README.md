@@ -13,10 +13,10 @@ lowfat is a lightweight CLI tool that reduces AI token costs by filtering CLI ou
 
 ### Core focus
 
-- **Lightweight** — Small single binary, small core; but extensible.
-- **Local-first** — No telemetry; you own your data.
-- **Composable** — UNIX-style pipes, mix built-ins and your own filters; not magic.
-- **User-owned** — `lowfat history` shows what you run most; allow you to customize for your usecase.
+- **Lightweight** — Small core single binary, extensible via plugins.
+- **Local-first** — No telemetry; you should own your data.
+- **Composable**  — UNIX-style pipes, mix built-ins and your own custom filters.
+- **User-owned**  — `lowfat history` shows what you ran most and use it as token saving tuning per your usecase.
 
 ### Before / after
 
