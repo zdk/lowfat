@@ -1,0 +1,29 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # Same runtimes the release job installs for the plugin tests.
+      - name: Install test runtimes
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lua5.4 ruby
+
+      - name: Build and test
+        run: cargo test --workspace

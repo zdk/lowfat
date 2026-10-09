@@ -65,6 +65,7 @@ Run `lowfat info --config` to see the resolved config and validate your `.lowfat
 | `LOWFAT_HOME`       | Plugin/config home — overrides the resolution order below           |
 | `XDG_CONFIG_HOME`   | If set, plugin/config home is `$XDG_CONFIG_HOME/lowfat`             |
 | `LOWFAT_DATA`       | Data directory for history db (default: `~/.local/share/lowfat`)    |
+| `LOWFAT_PIPED`      | Set when stdout feeds a pipe or file: JSON output passes through raw |
 
 Env vars take priority over `.lowfat`. History and gain data live at `$LOWFAT_DATA/history.db` (default `~/.local/share/lowfat/history.db`) — delete the file to reset.
 

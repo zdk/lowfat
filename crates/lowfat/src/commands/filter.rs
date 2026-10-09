@@ -115,7 +115,10 @@ fn describe_selector(rule: &lowfat_core::lf::Rule) -> String {
         LevelPattern::Star => "*".to_string(),
         LevelPattern::Specific(l) => l.to_string(),
     };
-    format!("{sub}, {lvl}")
+    match &rule.name {
+        Some(name) => format!("rule {name} ({sub}, {lvl})"),
+        None => format!("{sub}, {lvl}"),
+    }
 }
 
 fn truncate(s: &str, n: usize) -> String {
