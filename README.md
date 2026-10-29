@@ -142,25 +142,18 @@ lowfat ls -la
 { "shellCommandPrefix": "eval \"$(lowfat shell-init zsh)\"; " }
 ```
 
-**Claude Code agent-summary side query** — opt-in, unofficial. Every 30 s Claude Code
-resends each background agent's whole transcript to its model for a 3-word status line
-([#86879](https://github.com/anthropics/claude-code/issues/86879) measures it at ~18% of
-a subagent-heavy session). This installs a Bun preload that skips that timer; nothing
-else changes and the binary is untouched. Requires the shell integration above.
+**Claude Code agent summaries** — opt-in. Claude Code resends each background agent's
+transcript every 30 s for a 3-word status line
+([#86879](https://github.com/anthropics/claude-code/issues/86879): ~18% of a subagent-heavy session).
 
 ```sh
-lowfat claude agent-summary off   # write ~/.lowfat/no-agent-summary.js; shell-init exports BUN_OPTIONS
-claude daemon stop --any          # then open a new shell and start claude
+lowfat claude agent-summary off   # Bun preload skips that timer; shell-init exports BUN_OPTIONS
+claude daemon stop --any          # restart, then open a new shell
 lowfat claude agent-summary on    # undo
 ```
 
-An update to Claude Code can silently bring summaries back (`lowfat claude agent-summary`
-shows the switch, not whether it still works). Altering a client's runtime may conflict
-with your service terms; that check is on you.
-
-Alternative without any hack: `"env": {"CLAUDE_CODE_FORK_SUBAGENT": "0"}` in `~/.claude/settings.json`
-also stops the summaries, but it removes `fork` subagents and forked skills with them. Use the
-preload when you want to keep fork mode.
+Unofficial: a Claude Code update can silently re-enable it, and it may conflict with your service terms.
+No hack needed if you don't use `fork` subagents: `"env": {"CLAUDE_CODE_FORK_SUBAGENT": "0"}` in settings.json.
 
 ### Usage highlights
 
