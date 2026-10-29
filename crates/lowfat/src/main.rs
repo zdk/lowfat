@@ -79,6 +79,11 @@ Examples:
         #[command(subcommand)]
         action: OpencodeAction,
     },
+    /// Claude Code tweaks (agent-summary side query)
+    Claude {
+        #[command(subcommand)]
+        action: ClaudeAction,
+    },
     /// Print shell init script for eval
     ShellInit {
         /// Shell type (bash, zsh, fish)
@@ -215,6 +220,26 @@ Examples:
 }
 
 #[derive(Subcommand)]
+enum ClaudeAction {
+    /// Turn the per-agent status-line side query off (saves tokens) or back on
+    #[command(after_help = "\
+`off` writes a Bun preload to the lowfat home; `lowfat shell-init` then exports
+BUN_OPTIONS=--preload for it. Claude Code is not modified. Unofficial: an
+update can silently re-enable summaries, and it may conflict with the terms of
+your service — that check is on you. Side effect: agent panel status lines stop
+updating.
+
+Examples:
+  lowfat claude agent-summary off   # install + enable
+  lowfat claude agent-summary on    # remove
+  lowfat claude agent-summary       # show state")]
+    AgentSummary {
+        /// on | off (omit to show state)
+        state: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
 enum OpencodeAction {
     /// Install the plugin to ~/.config/opencode/plugins/lowfat.ts
     Install,
@@ -256,6 +281,11 @@ fn main() {
         Some(Commands::Opencode { action }) => match action {
             OpencodeAction::Install => commands::opencode::install(),
             OpencodeAction::Uninstall => commands::opencode::uninstall(),
+        },
+        Some(Commands::Claude { action }) => match action {
+            ClaudeAction::AgentSummary { state } => {
+                commands::claude::agent_summary(state.as_deref())
+            }
         },
         Some(Commands::ShellInit { shell }) => commands::shell_init::run(&shell),
         Some(Commands::Filter {

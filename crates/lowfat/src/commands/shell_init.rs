@@ -17,7 +17,44 @@ pub fn run(shell: &str) -> Result<()> {
     Ok(())
 }
 
+/// `export BUN_OPTIONS=--preload <path>` when `lowfat claude agent-summary off`
+/// is active. Outside the agent-env guard: it must reach the shell that
+/// launches `claude`. Idempotent so nested shells don't append twice.
+fn posix_preload_export() -> String {
+    let path = super::claude::preload_path();
+    if !path.is_file() {
+        return String::new();
+    }
+    posix_preload_export_for(&path)
+}
+
+fn posix_preload_export_for(path: &std::path::Path) -> String {
+    let p = path.display();
+    format!(
+        r#"case " ${{BUN_OPTIONS-}} " in
+  *" --preload {p} "*) ;;
+  *) export BUN_OPTIONS="${{BUN_OPTIONS:+$BUN_OPTIONS }}--preload {p}" ;;
+esac
+"#
+    )
+}
+
+fn fish_preload_export() -> String {
+    let path = super::claude::preload_path();
+    if !path.is_file() {
+        return String::new();
+    }
+    let p = path.display();
+    format!(
+        r#"if not string match -q "*--preload {p}*" -- "$BUN_OPTIONS"
+  set -gx BUN_OPTIONS (string trim -- "$BUN_OPTIONS --preload {p}")
+end
+"#
+    )
+}
+
 fn print_posix_init() {
+    print!("{}", posix_preload_export());
     print!(
         r#"# lowfat shell init — auto-wrap commands for LLM token savings
 # Usage: eval "$(lowfat shell-init zsh)"
@@ -33,6 +70,7 @@ fi
 }
 
 fn print_fish_init() {
+    print!("{}", fish_preload_export());
     print!(
         r#"# lowfat shell init for fish
 # Usage: lowfat shell-init fish | source
@@ -44,4 +82,24 @@ if test "$CLAUDECODE" = 1; or test -n "$CODEX_ENV"; or test "$LOWFAT_ENABLE" = 1
 end
 "#
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::posix_preload_export_for;
+    use std::path::Path;
+
+    #[test]
+    fn preload_export_is_idempotent() {
+        let snippet = posix_preload_export_for(Path::new("/x/no-agent-summary.js"));
+        let out = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(format!("{snippet}{snippet}printf %s \"$BUN_OPTIONS\""))
+            .output()
+            .unwrap();
+        assert_eq!(
+            String::from_utf8_lossy(&out.stdout),
+            "--preload /x/no-agent-summary.js"
+        );
+    }
 }

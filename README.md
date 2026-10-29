@@ -142,6 +142,22 @@ lowfat ls -la
 { "shellCommandPrefix": "eval \"$(lowfat shell-init zsh)\"; " }
 ```
 
+**Claude Code agent-summary side query** — opt-in, unofficial. Every 30 s Claude Code
+resends each background agent's whole transcript to its model for a 3-word status line
+([#86879](https://github.com/anthropics/claude-code/issues/86879) measures it at ~18% of
+a subagent-heavy session). This installs a Bun preload that skips that timer; nothing
+else changes and the binary is untouched. Requires the shell integration above.
+
+```sh
+lowfat claude agent-summary off   # write ~/.lowfat/no-agent-summary.js; shell-init exports BUN_OPTIONS
+claude daemon stop --any          # then open a new shell and start claude
+lowfat claude agent-summary on    # undo
+```
+
+An update to Claude Code can silently bring summaries back (`lowfat claude agent-summary`
+shows the switch, not whether it still works). Altering a client's runtime may conflict
+with your service terms; that check is on you.
+
 ### Usage highlights
 
 ```sh
