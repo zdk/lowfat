@@ -229,6 +229,9 @@ update can silently re-enable summaries, and it may conflict with the terms of
 your service — that check is on you. Side effect: agent panel status lines stop
 updating.
 
+Alternative without any hack: CLAUDE_CODE_FORK_SUBAGENT=0 (settings.json `env`)
+also stops the summaries, but removes `fork` subagents and forked skills too.
+
 Examples:
   lowfat claude agent-summary off   # install + enable
   lowfat claude agent-summary on    # remove

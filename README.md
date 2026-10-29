@@ -158,6 +158,10 @@ An update to Claude Code can silently bring summaries back (`lowfat claude agent
 shows the switch, not whether it still works). Altering a client's runtime may conflict
 with your service terms; that check is on you.
 
+Alternative without any hack: `"env": {"CLAUDE_CODE_FORK_SUBAGENT": "0"}` in `~/.claude/settings.json`
+also stops the summaries, but it removes `fork` subagents and forked skills with them. Use the
+preload when you want to keep fork mode.
+
 ### Usage highlights
 
 ```sh
