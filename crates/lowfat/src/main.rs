@@ -230,12 +230,7 @@ your service — that check is on you. Side effect: agent panel status lines sto
 updating.
 
 Alternative without any hack: CLAUDE_CODE_FORK_SUBAGENT=0 (settings.json `env`)
-also stops the summaries, but removes `fork` subagents and forked skills too.
-
-Examples:
-  lowfat claude agent-summary off   # install + enable
-  lowfat claude agent-summary on    # remove
-  lowfat claude agent-summary       # show state")]
+also stops the summaries, but removes `fork` subagents and forked skills too.")]
     AgentSummary {
         /// on | off (omit to show state)
         state: Option<String>,
