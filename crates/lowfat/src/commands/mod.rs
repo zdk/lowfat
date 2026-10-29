@@ -1,5 +1,6 @@
 pub mod audit;
 pub mod candidates;
+pub mod claude;
 pub mod config;
 pub mod filter;
 pub mod filters;

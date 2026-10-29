@@ -142,6 +142,19 @@ lowfat ls -la
 { "shellCommandPrefix": "eval \"$(lowfat shell-init zsh)\"; " }
 ```
 
+**Claude Code agent summaries** — opt-in. Claude Code resends each background agent's
+transcript every 30 s for a 3-word status line
+([#86879](https://github.com/anthropics/claude-code/issues/86879): ~18% of a subagent-heavy session).
+
+```sh
+lowfat claude agent-summary off   # Bun preload skips that timer; shell-init exports BUN_OPTIONS
+claude daemon stop --any          # restart, then open a new shell
+lowfat claude agent-summary on    # undo
+```
+
+Unofficial: a Claude Code update can silently re-enable it, and it may conflict with your service terms.
+No hack needed if you don't use `fork` subagents: `"env": {"CLAUDE_CODE_FORK_SUBAGENT": "0"}` in settings.json.
+
 ### Usage highlights
 
 ```sh
